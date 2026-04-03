@@ -12,12 +12,15 @@ export default function StartSessionButton() {
     >
       <button
         type="button"
-        onClick={() => {
-          if (isTauri()) void openFloatingWindow();
-          else
+        onClick={async () => {
+          if (isTauri()) {
+            const r = await openFloatingWindow();
+            if (!r.ok) alert(r.error);
+          } else {
             alert(
               "Run the desktop app: cd desktop && npm run tauri:dev — then use the floating session window.",
             );
+          }
         }}
         className="flex w-full items-center justify-center gap-2 rounded-[22px] border border-indigo-400/30 bg-gradient-to-r from-indigo-600/90 via-blue-600/85 to-violet-600/80 px-6 py-4 text-[14px] font-semibold text-white shadow-[0_12px_40px_rgba(79,70,229,0.35)] transition hover:border-indigo-300/40 hover:shadow-[0_16px_48px_rgba(79,70,229,0.42)]"
         style={{
@@ -32,7 +35,7 @@ export default function StartSessionButton() {
       </button>
       <p className="mt-2 text-center text-[11px] text-white/35">
         {isTauri()
-          ? "Always-on-top glass bar · distraction state + timer"
+          ? "Optional overlay · same live data as Queue — start/stop sessions above, no browser"
           : "Use Tauri dev for the real OS overlay. Chrome extension still runs from the Next app."}
       </p>
     </motion.div>

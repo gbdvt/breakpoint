@@ -2,11 +2,35 @@ import type { Task } from "@/lib/dummyData";
 
 type Props = {
   task: Task;
+  /** Queue-style drag handle + optional active highlight */
+  queue?: boolean;
+  active?: boolean;
 };
 
-export default function TaskItem({ task }: Props) {
+export default function TaskItem({ task, queue, active }: Props) {
   return (
-    <div className="group flex items-start gap-3 rounded-xl px-2 py-2.5 transition hover:bg-white/[0.04]">
+    <div
+      className={`group flex items-start gap-2.5 rounded-xl px-2 py-2.5 transition hover:bg-white/[0.04] ${
+        active
+          ? "bg-indigo-500/20 ring-1 ring-indigo-400/35"
+          : ""
+      }`}
+    >
+      {queue ? (
+        <div
+          className="mt-1 flex w-4 shrink-0 flex-col gap-0.5 text-white/25"
+          aria-hidden
+        >
+          <span className="h-px w-3 rounded-full bg-current" />
+          <span className="h-px w-3 rounded-full bg-current" />
+        </div>
+      ) : null}
+      {queue && active ? (
+        <span
+          className="mt-1.5 size-2 shrink-0 rounded-full bg-sky-400 shadow-[0_0_10px_rgba(56,189,248,0.6)]"
+          title="Current focus"
+        />
+      ) : null}
       <button
         type="button"
         aria-pressed={task.done}

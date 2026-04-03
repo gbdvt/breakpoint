@@ -1,9 +1,16 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod bridge;
+
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use bridge::{
+    get_chrome_bridge_state, queue_clear_extension_state, queue_session_end, queue_session_start,
+    spawn_bridge_server, SharedHub,
+};
 use tauri::{Manager, WebviewUrl};
 use tauri::webview::WebviewWindowBuilder;
+use tauri::window::Color;
 
 static FLOATING_ON_TOP: AtomicBool = AtomicBool::new(true);
 
@@ -23,17 +30,22 @@ fn open_floating_window(app: tauri::AppHandle) -> Result<(), String> {
         "floating",
         WebviewUrl::App("floating.html".into()),
     )
-    .title("Breakpoint · Session")
-    .inner_size(420.0, 132.0)
-    .min_inner_size(320.0, 112.0)
-    .max_inner_size(560.0, 220.0)
+    .title("Breakpoint · HUD")
+    .inner_size(520.0, 76.0)
+    .min_inner_size(360.0, 68.0)
+    .max_inner_size(640.0, 112.0)
     .resizable(true)
     .decorations(false)
     .transparent(true)
+    .shadow(false)
     .always_on_top(true)
     .skip_taskbar(false)
+    .background_color(Color(0, 0, 0, 0))
     .build()
-    .map_err(|e| e.to_string())?;
+    .map_err(|e| {
+        eprintln!("[breakpoint] floating webview failed: {e}");
+        e.to_string()
+    })?;
 
     Ok(())
 }
@@ -95,13 +107,24 @@ fn focus_main_window(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 fn main() {
+    let hub: SharedHub = std::sync::Arc::new(std::sync::Mutex::new(bridge::BridgeHub::default()));
+
     tauri::Builder::default()
+        .manage(hub.clone())
+        .setup(move |app| {
+            spawn_bridge_server(app.handle().clone(), hub.clone());
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             open_floating_window,
             close_floating_window,
             toggle_floating_always_on_top,
             open_focus_window,
             focus_main_window,
+            get_chrome_bridge_state,
+            queue_session_start,
+            queue_session_end,
+            queue_clear_extension_state,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

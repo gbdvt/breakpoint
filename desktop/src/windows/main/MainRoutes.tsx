@@ -1,17 +1,19 @@
 import { Route, Routes } from "react-router-dom";
-import AppShell from "@/components/ui/AppShell";
-import DashboardPage from "@/components/dashboard/DashboardPage";
+import NarrowPanelLayout from "@/components/layout/NarrowPanelLayout";
+import QueueHomePage from "@/components/dashboard/QueueHomePage";
+import SessionsListPage from "@/components/dashboard/SessionsListPage";
 import SessionDetailView from "./SessionDetailView";
 import StatsView from "./StatsView";
 
 export default function MainRoutes() {
   return (
-    <AppShell userFirstName="Gaspar">
-      <Routes>
-        <Route path="/" element={<DashboardPage />} />
+    <Routes>
+      <Route element={<NarrowPanelLayout />}>
+        <Route path="/" element={<QueueHomePage />} />
+        <Route path="/sessions" element={<SessionsListPage />} />
         <Route path="/stats" element={<StatsView />} />
         <Route path="/session/:id" element={<SessionDetailView />} />
-      </Routes>
-    </AppShell>
+      </Route>
+    </Routes>
   );
 }

@@ -2,5 +2,11 @@
   "identifier": "default",
   "description": "Default permissions for Breakpoint webviews",
   "windows": ["*"],
-  "permissions": ["core:default"]
+  "permissions": [
+    "core:default",
+    "core:window:allow-set-background-color",
+    "core:webview:allow-set-webview-background-color",
+    "core:window:allow-close",
+    "core:window:allow-minimize"
+  ]
 }

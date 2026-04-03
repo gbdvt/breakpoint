@@ -21,16 +21,52 @@ body {
     sans-serif;
 }
 
-/* Frameless floating webview: let OS blur / desktop show through */
-html.floating-root,
-body.floating-window {
+/* Frameless floating webview: native + WebView2 see-through; only the pill draws pixels */
+html.floating-root {
+  color-scheme: dark;
   background: transparent !important;
+  background-color: transparent !important;
+  height: 100%;
+  width: 100%;
   overflow: hidden;
 }
 
+body.floating-window {
+  margin: 0;
+  min-height: 0;
+  height: 100%;
+  background: transparent !important;
+  background-color: rgba(0, 0, 0, 0) !important;
+  overflow: hidden;
+  color-scheme: dark;
+}
+
 body.floating-window #root {
-  min-height: 100vh;
-  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-height: 0;
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 6px 10px;
+  background: transparent !important;
+  background-color: rgba(0, 0, 0, 0) !important;
+}
+
+/* Outer shell: no fill; only centers the glass HUD */
+.floating-hud-layout {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 1 auto;
+  width: 100%;
+  max-width: 100%;
+  min-height: 0;
+  background: transparent !important;
+  background-color: rgba(0, 0, 0, 0) !important;
+  box-shadow: none;
 }
 
 * {

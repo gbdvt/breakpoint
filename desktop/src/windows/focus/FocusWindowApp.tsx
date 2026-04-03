@@ -27,8 +27,10 @@ export default function FocusWindowApp() {
         <div className="mb-3 flex gap-2">
           <button
             type="button"
-            onClick={() => {
-              if (isTauri()) void openFloatingWindow();
+            onClick={async () => {
+              if (!isTauri()) return;
+              const r = await openFloatingWindow();
+              if (!r.ok) console.warn(r.error);
             }}
             className="flex-1 rounded-xl border border-indigo-400/30 bg-indigo-600/25 py-2.5 text-[12px] font-semibold text-white shadow-lg shadow-indigo-950/40 disabled:opacity-40"
             disabled={!isTauri()}

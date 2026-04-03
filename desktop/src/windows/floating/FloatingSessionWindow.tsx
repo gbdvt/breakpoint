@@ -1,28 +1,47 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useChromeBridgeFeed } from "@/hooks/useChromeBridgeFeed";
 import { closeFloatingWindow } from "@/lib/tauriBridge";
+import { distractionCount, sessionIsLive } from "@/lib/liveSessionDetail";
 
-function formatElapsed(totalSec: number): { m: string; s: string } {
-  const m = Math.floor(totalSec / 60);
-  const s = totalSec % 60;
-  return { m: String(m), s: s.toString().padStart(2, "0") };
-}
-
+/**
+ * HUD pill — shows latest Chrome / extension activity when a session is live.
+ */
 export default function FloatingSessionWindow() {
-  const [sec, setSec] = useState(47 * 60 + 12);
-  const drifts = 1;
-  const [onTop, setOnTop] = useState(true);
+  const feed = useChromeBridgeFeed();
+  const live = feed && sessionIsLive(feed.session);
+  const events = feed?.events ?? [];
+  const last = events.length ? events[events.length - 1] : null;
+  const dCount = distractionCount(events.slice(-12));
 
+  const [tick, setTick] = useState(0);
   useEffect(() => {
-    const id = window.setInterval(() => setSec((s) => s + 1), 1000);
+    const id = window.setInterval(() => setTick((t) => t + 1), 1000);
     return () => window.clearInterval(id);
   }, []);
 
-  const { m, s } = formatElapsed(sec);
+  const session = feed?.session;
+  const time = useMemo(() => {
+    const elapsedSec =
+      live && session
+        ? Math.max(0, Math.floor((Date.now() - session.startedAt) / 1000))
+        : 0;
+    const mm = Math.floor(elapsedSec / 60);
+    const ss = elapsedSec % 60;
+    return `${mm}:${ss.toString().padStart(2, "0")}`;
+  }, [live, session, tick]);
 
-  const endSession = useCallback(async () => {
+  const domain = last?.domain ?? "—";
+  const line =
+    last?.title && last.title.trim().length
+      ? last.title.trim().slice(0, 80) + (last.title.length > 80 ? "…" : "")
+      : live
+        ? "Watching tab activity from Chrome"
+        : "No session — start one in the web app";
+
+  const dismiss = useCallback(async () => {
     try {
       await closeFloatingWindow();
     } catch {
@@ -30,6 +49,7 @@ export default function FloatingSessionWindow() {
     }
   }, []);
 
+  const [onTop, setOnTop] = useState(true);
   const togglePin = useCallback(async () => {
     try {
       const { toggleFloatingAlwaysOnTop } = await import("@/lib/tauriBridge");
@@ -41,80 +61,54 @@ export default function FloatingSessionWindow() {
   }, []);
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-3 font-[family-name:var(--font-plus-jakarta)]">
+    <div className="floating-hud-layout font-[family-name:var(--font-plus-jakarta)]">
       <motion.div
-        initial={{ opacity: 0, scale: 0.96 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ type: "spring", stiffness: 420, damping: 32 }}
-        className="w-full max-w-[480px]"
+        initial={{ opacity: 0, y: 4 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ type: "spring", stiffness: 400, damping: 36 }}
+        data-tauri-drag-region
+        className="flex w-full max-w-[min(100%,520px)] cursor-grab items-center gap-3 rounded-full border border-sky-200/25 px-3.5 py-2 active:cursor-grabbing"
+        style={{
+          background:
+            "linear-gradient(125deg, rgba(59,130,246,0.5) 0%, rgba(14,165,233,0.38) 42%, rgba(15,23,42,0.62) 100%)",
+          backdropFilter: "blur(32px) saturate(1.7)",
+          WebkitBackdropFilter: "blur(32px) saturate(1.7)",
+          boxShadow:
+            "0 0 0 1px rgba(255,255,255,0.14) inset, 0 1px 0 rgba(255,255,255,0.22) inset, 0 12px 40px rgba(37,99,235,0.28), 0 4px 16px rgba(15,23,42,0.35)",
+        }}
       >
-        <div
-          data-tauri-drag-region
-          className="mb-1 flex cursor-grab items-center justify-between rounded-t-[18px] border border-white/[0.1] border-b-0 bg-white/[0.06] px-3 py-2 backdrop-blur-xl active:cursor-grabbing"
+        <span
+          className="shrink-0 font-mono text-[14px] font-semibold tabular-nums text-white"
+          style={{ fontFamily: '"JetBrains Mono", ui-monospace, monospace' }}
         >
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-white/45">
-            Breakpoint
-          </span>
-          <div className="flex items-center gap-1.5 no-drag">
-            <button
-              type="button"
-              onClick={() => void togglePin()}
-              className={`rounded-lg px-2 py-1 text-[10px] font-medium transition ${
-                onTop
-                  ? "bg-indigo-500/25 text-indigo-200"
-                  : "bg-white/[0.06] text-white/50"
-              }`}
-            >
-              {onTop ? "Pinned" : "Pin"}
-            </button>
-          </div>
-        </div>
+          {time}
+        </span>
 
-        <div
-          className="rounded-b-[18px] rounded-t-none border border-white/[0.12] border-t-0 bg-[#0a1024]/72 px-4 py-3 shadow-[0_20px_50px_rgba(0,0,0,0.55)] backdrop-blur-2xl"
-          style={{
-            boxShadow:
-              "0 0 0 1px rgba(255,255,255,0.05) inset, 0 20px 50px rgba(0,0,0,0.55)",
-          }}
-        >
-          <div className="flex items-center gap-3">
-            <div
-              className="flex shrink-0 items-baseline gap-0.5 font-mono text-[13px] tabular-nums text-white/95"
-              style={{ fontFamily: '"JetBrains Mono", ui-monospace, monospace' }}
-            >
-              <span className="text-xl font-semibold tracking-tight">{m}</span>
-              <span className="text-white/35">:</span>
-              <span className="text-xl font-semibold tracking-tight">{s}</span>
-            </div>
-            <div className="h-9 w-px bg-white/[0.08]" />
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-[12px] font-medium text-white/90">
-                Ship drift overlay copy + timing
-              </p>
-              <p className="truncate text-[10px] text-white/40">
-                Queue ~18m est · focus calm
-              </p>
-            </div>
-            <div className="flex shrink-0 flex-col items-end gap-1">
-              <span className="rounded-md border border-emerald-400/25 bg-emerald-500/12 px-2 py-0.5 text-[9px] font-medium text-emerald-300/90">
-                In flow
-              </span>
-              <span className="rounded-md border border-rose-400/25 bg-rose-500/10 px-2 py-0.5 text-[9px] font-medium text-rose-200/85">
-                {drifts} drift{drifts === 1 ? "" : "s"}
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={() => void endSession()}
-              className="shrink-0 rounded-xl border border-rose-400/35 bg-rose-500/20 px-3 py-2 text-[11px] font-semibold text-rose-100 transition hover:bg-rose-500/30"
-            >
-              End
-            </button>
-          </div>
-        </div>
-        <p className="mt-2 text-center text-[9px] text-white/35">
-          Drag the top strip to move · desktop overlay
+        <span className="no-drag flex size-6 shrink-0 items-center justify-center rounded-full bg-sky-300/95 text-[11px] font-bold text-sky-950 shadow-sm">
+          {dCount > 9 ? "9+" : dCount}
+        </span>
+
+        <p className="min-w-0 flex-1 text-[11px] leading-snug text-sky-50/95">
+          <span className="font-medium text-white">{domain}</span>
+          <span className="text-white/80"> — {line}</span>
         </p>
+
+        <div className="no-drag flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            onClick={() => void togglePin()}
+            className="rounded-full bg-white/15 px-2 py-1 text-[9px] font-semibold text-white/90 hover:bg-white/25"
+          >
+            {onTop ? "On top" : "Float"}
+          </button>
+          <button
+            type="button"
+            onClick={() => void dismiss()}
+            className="rounded-full border border-white/25 bg-white/10 px-2.5 py-1 text-[10px] font-semibold text-white hover:bg-white/20"
+          >
+            Dismiss
+          </button>
+        </div>
       </motion.div>
     </div>
   );

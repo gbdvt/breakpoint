@@ -160,6 +160,22 @@ async function saveState(session, events) {
   await chrome.storage.local.set(patch);
 }
 
+const DESKTOP_MIRROR_URL = "http://127.0.0.1:17871/breakpoint/state";
+
+function mirrorToDesktop(session, events) {
+  try {
+    const body = JSON.stringify({ session, events });
+    fetch(DESKTOP_MIRROR_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+      keepalive: true,
+    }).catch(() => {});
+  } catch {
+    /* desktop app not running */
+  }
+}
+
 function broadcastState(session, events) {
   const msg = { type: "STATE", session, events };
   for (const port of dashboardPorts) {
@@ -169,6 +185,7 @@ function broadcastState(session, events) {
       dashboardPorts.delete(port);
     }
   }
+  mirrorToDesktop(session, events);
 }
 
 function resetTrackingGuards() {
@@ -597,6 +614,36 @@ chrome.tabs.onCreated.addListener(async (tab) => {
     setTimeout(() => chrome.tabs.onUpdated.removeListener(listener), 15_000);
   }
 });
+
+/** Desktop app (Tauri) queues SESSION_START / SESSION_END here — no browser tab needed. */
+const DESKTOP_POLL_URL = "http://127.0.0.1:17871/breakpoint/poll";
+
+function pollDesktopCommandQueue() {
+  void (async () => {
+    try {
+      const r = await fetch(DESKTOP_POLL_URL);
+      if (!r.ok) return;
+      const j = await r.json();
+      if (j == null || j.command == null || j.command === "") return;
+      if (j.command === "SESSION_START" && j.session) {
+        await handleSessionStart(j.session);
+        return;
+      }
+      if (j.command === "SESSION_END") {
+        await handleSessionEnd();
+        return;
+      }
+      if (j.command === "CLEAR_ALL") {
+        await handleClearAll();
+        return;
+      }
+    } catch {
+      /* desktop not running */
+    }
+  })();
+}
+
+setInterval(pollDesktopCommandQueue, 1200);
 
 chrome.webNavigation.onCommitted.addListener(async (details) => {
   if (!(await trackingActive())) return;
