@@ -139,7 +139,8 @@ export default function SessionPage() {
             {events.length === 0 && (
               <p className="text-sm text-neutral-500">
                 No events yet. Switch tabs, open new ones, or navigate — the
-                extension will append rows here.
+                extension will append rows here. Titles often fill in after the
+                page loads (e.g. YouTube, ChatGPT).
               </p>
             )}
             {events.map((event, index) => (

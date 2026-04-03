@@ -1,10 +1,29 @@
 {
   "manifest_version": 3,
   "name": "Breakpoint",
-  "version": "0.1.0",
+  "version": "0.2.2",
   "description": "Records tab activity during Breakpoint focus sessions (local-first).",
-  "permissions": ["storage", "tabs", "webNavigation"],
-  "host_permissions": ["<all_urls>"],
+  "permissions": [
+    "storage",
+    "tabs",
+    "webNavigation",
+    "scripting"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "icons": {
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "Breakpoint — session tracking",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
   "background": {
     "service_worker": "background.js"
   },

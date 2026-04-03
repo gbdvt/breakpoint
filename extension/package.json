@@ -1,0 +1,12 @@
+{
+  "name": "breakpoint-extension",
+  "version": "0.2.2",
+  "private": true,
+  "description": "Breakpoint Chrome MV3 extension — version here is the source of truth for manifest.json",
+  "scripts": {
+    "sync-version": "node scripts/sync-manifest-version.mjs",
+    "bump": "node scripts/bump-version.mjs patch",
+    "bump:minor": "node scripts/bump-version.mjs minor",
+    "bump:major": "node scripts/bump-version.mjs major"
+  }
+}

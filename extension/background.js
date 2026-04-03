@@ -1,10 +1,16 @@
 /**
  * Breakpoint MV3 service worker: tab + navigation signals → chrome.storage.local
  * Dashboard talks via externally_connectable (chrome.runtime.connect / sendMessage).
+ *
+ * Drift scoring below mirrors breakpoint/lib/driftEngine.ts — keep in sync when tuning.
+ * Tab titles are captured on events and refreshed via tabs.onUpdated (YouTube, ChatGPT, etc.).
+ * Drift interventions: in-page overlay + toolbar badge (no separate OS/Chrome popup window).
  */
 
 const STORAGE_SESSION = "breakpoint_active_session";
 const STORAGE_EVENTS = "breakpoint_events";
+/** Shared payload for in-page overlay.js (chrome.storage.local). */
+const STORAGE_LAST_DRIFT_UI = "breakpoint_last_drift_ui";
 
 const DISTRACTOR_ROOTS = [
   "youtube.com",
@@ -17,12 +23,37 @@ const DISTRACTOR_ROOTS = [
   "tiktok.com",
 ];
 
+/** Matches dashboard research-hint list (for intervention copy only). */
+const RESEARCH_HINT_ROOTS = [
+  "stackoverflow.com",
+  "github.com",
+  "developer.mozilla.org",
+  "mdn.io",
+  "w3.org",
+  "npmjs.com",
+  "medium.com",
+  "dev.to",
+];
+
+/**
+ * Rich-title sites (ChatGPT, YouTube, Stack Overflow, etc.): document.title often becomes
+ * useful after load — tabs.onUpdated patches the latest event for that tabId.
+ * Future: route these domains to an LLM with { domain, title, url }.
+ */
+
+const RECENT_WINDOW = 10;
+
 /** @type {Set<chrome.runtime.Port>} */
 const dashboardPorts = new Set();
 
 let lastActiveTabId = null;
+/** Last tab we saw on a distractor domain (YouTube, etc.) — overlay targets this if focus moved away. */
+let lastDistractorTabId = null;
 /** @type {Record<string, number>} */
 let lastDistractorVisit = {};
+
+/** True if last evaluated drift score was in the intervention band (>= threshold). */
+let prevShouldIntervene = false;
 
 function normalizeHost(hostname) {
   if (!hostname) return "";
@@ -45,6 +76,54 @@ function isDistractorHost(host) {
   return DISTRACTOR_ROOTS.some(
     (root) => host === root || host.endsWith("." + root),
   );
+}
+
+function isResearchHintHost(host) {
+  if (!host) return false;
+  return RESEARCH_HINT_ROOTS.some(
+    (root) => host === root || host.endsWith("." + root),
+  );
+}
+
+function computeDriftIndex(events) {
+  let score = 0;
+  const recent = events.slice(-RECENT_WINDOW);
+
+  const tabSwitches = recent.filter((e) => e.type === "TAB_SWITCH").length;
+  const tabCreates = recent.filter((e) => e.type === "TAB_CREATE").length;
+  const distractorHits = recent.filter(
+    (e) => e.domain && isDistractorHost(e.domain),
+  ).length;
+  const repeatChecks = recent.filter((e) => e.type === "REPEAT_CHECK").length;
+  const explicitDistractor = recent.filter(
+    (e) => e.type === "DISTRACTOR_OPEN",
+  ).length;
+
+  if (tabSwitches >= 3) score += 2;
+  if (tabCreates >= 3) score += 2;
+  if (distractorHits >= 1 || explicitDistractor >= 1) score += 3;
+  if (repeatChecks >= 2) score += 2;
+
+  return score;
+}
+
+function shouldIntervene(score) {
+  return score >= 5;
+}
+
+function interventionKind(events) {
+  const recent = events.slice(-RECENT_WINDOW);
+  const tabCreates = recent.filter((e) => e.type === "TAB_CREATE").length;
+  const researchOpens = recent.filter(
+    (e) =>
+      e.type === "TAB_CREATE" &&
+      e.domain &&
+      (isResearchHintHost(e.domain) || isDistractorHost(e.domain)),
+  ).length;
+
+  if (tabCreates >= 3 && researchOpens >= 2) return "research";
+  if (tabCreates >= 4) return "research";
+  return "reactive";
 }
 
 async function loadState() {
@@ -76,12 +155,219 @@ function broadcastState(session, events) {
   }
 }
 
+function resetTrackingGuards() {
+  lastActiveTabId = null;
+  lastDistractorTabId = null;
+  lastDistractorVisit = {};
+  prevShouldIntervene = false;
+}
+
+/** @param {unknown[]} items */
+function rememberDistractorTabsFromEvents(items) {
+  for (const e of items) {
+    if (
+      e &&
+      typeof e === "object" &&
+      e.tabId != null &&
+      e.domain &&
+      isDistractorHost(String(e.domain))
+    ) {
+      lastDistractorTabId = e.tabId;
+    }
+  }
+}
+
+/**
+ * @param {chrome.tabs.Tab} tab
+ * @param {string} type
+ */
+function tabToEvent(tab, type) {
+  const url = tab.url || tab.pendingUrl || "";
+  const domain = url ? hostFromUrl(url) : "";
+  /** @type {Record<string, unknown>} */
+  const ev = {
+    timestamp: Date.now(),
+    type,
+    domain: domain || undefined,
+    title: tab.title || undefined,
+    url: url || undefined,
+  };
+  if (tab.id != null) ev.tabId = tab.id;
+  return ev;
+}
+
+async function clearBadge() {
+  try {
+    await chrome.action.setBadgeText({ text: "" });
+  } catch {
+    /* ignore */
+  }
+}
+
+async function setDriftBadge() {
+  try {
+    await chrome.action.setBadgeText({ text: "!" });
+    await chrome.action.setBadgeBackgroundColor({ color: "#B45309" });
+  } catch {
+    /* ignore */
+  }
+}
+
+function buildDriftPayload(session, events) {
+  const kind = interventionKind(events);
+  const last = events[events.length - 1];
+  const domain = last?.domain || "unknown";
+  const title = last?.title;
+  const goalLine = session?.goal ? String(session.goal).slice(0, 140) : "";
+
+  let body =
+    kind === "research"
+      ? "Lots of new sources quickly — still preparing, or time for one small execution step?"
+      : "This looks like a drift pattern away from your stated goal.";
+
+  if (title && title.length > 0) {
+    body += ` This tab: “${title.slice(0, 140)}${title.length > 140 ? "…" : ""}”.`;
+  } else if (domain && domain !== "unknown") {
+    body += ` (${domain})`;
+  }
+
+  const headline = kind === "research" ? "Research pile-up" : "Drift signal";
+  return { headline, body, goalLine, kind };
+}
+
+/**
+ * Prefer: focused tab if it’s a distractor → last known distractor tab (e.g. YouTube) → trigger tab → any focused http(s) tab.
+ * Fixes injecting into localhost when the score crosses on “switch back to dashboard”.
+ */
+async function chooseOverlayTabId(triggerTabId) {
+  const activeList = await chrome.tabs.query({
+    active: true,
+    currentWindow: true,
+  });
+  const active = activeList[0];
+
+  if (active?.id && active.url && /^https?:\/\//i.test(active.url)) {
+    const h = hostFromUrl(active.url);
+    if (isDistractorHost(h)) return active.id;
+  }
+
+  if (lastDistractorTabId != null) {
+    try {
+      const t = await chrome.tabs.get(lastDistractorTabId);
+      if (t?.url && /^https?:\/\//i.test(t.url)) return t.id;
+    } catch {
+      /* tab closed */
+    }
+  }
+
+  if (triggerTabId != null) {
+    try {
+      const t = await chrome.tabs.get(triggerTabId);
+      if (t?.url && /^https?:\/\//i.test(t.url)) return t.id;
+    } catch {
+      /* gone */
+    }
+  }
+
+  if (active?.id && active.url && /^https?:\/\//i.test(active.url)) {
+    return active.id;
+  }
+  return null;
+}
+
+/**
+ * Persist payload and inject the bottom-right in-page card into the best tab
+ * (focused distractor, else last distractor tab, else trigger/active).
+ */
+async function showDriftIntervention(session, events, triggerTabId) {
+  const payload = buildDriftPayload(session, events);
+  await chrome.storage.local.set({ [STORAGE_LAST_DRIFT_UI]: payload });
+
+  const tabId = await chooseOverlayTabId(triggerTabId);
+  if (tabId == null) return;
+
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ["overlay.js"],
+    });
+  } catch (e) {
+    console.warn("[Breakpoint] overlay inject failed", e);
+  }
+}
+
+/**
+ * Keeps badge + drift UI aligned with the rolling score:
+ * - Badge clears when score falls below threshold (e.g. you switched back to work).
+ * - Overlay only on first crossing into the band (until score drops again).
+ */
+async function syncDriftIntervention(events, session, triggerTabId) {
+  const score = computeDriftIndex(events);
+  const nowBand = shouldIntervene(score);
+
+  if (!nowBand) {
+    if (prevShouldIntervene) await clearBadge();
+    prevShouldIntervene = false;
+    return;
+  }
+
+  const crossed = !prevShouldIntervene;
+  prevShouldIntervene = true;
+
+  if (crossed) {
+    await setDriftBadge();
+    await showDriftIntervention(session, events, triggerTabId);
+  }
+}
+
 async function appendEvents(newItems) {
   const { session, events } = await loadState();
   if (!session?.id) return;
+  rememberDistractorTabsFromEvents(newItems);
+  const triggerTabId = [...newItems]
+    .reverse()
+    .find((e) => e && typeof e === "object" && e.tabId != null)?.tabId;
   const next = events.concat(newItems);
   await saveState(undefined, next);
   broadcastState(session, next);
+  await syncDriftIntervention(next, session, triggerTabId);
+}
+
+/**
+ * When the document title updates (SPA / lazy title), patch the latest event for this tabId.
+ */
+async function patchLatestEventForTab(tabId, tab) {
+  const { session, events } = await loadState();
+  if (!session?.id) return;
+
+  const title = tab.title;
+  const url = tab.url || tab.pendingUrl;
+  if (!title && !url) return;
+
+  let idx = -1;
+  for (let i = events.length - 1; i >= 0; i--) {
+    if (events[i].tabId === tabId) {
+      idx = i;
+      break;
+    }
+  }
+  if (idx < 0) return;
+
+  const prev = events[idx];
+  const nextTitle = title || prev.title;
+  const nextUrl = url || prev.url;
+  if (nextTitle === prev.title && nextUrl === prev.url) return;
+
+  const copy = events.slice();
+  copy[idx] = {
+    ...prev,
+    title: nextTitle || prev.title,
+    url: nextUrl || prev.url,
+    domain: nextUrl ? hostFromUrl(nextUrl) || prev.domain : prev.domain,
+  };
+
+  await saveState(undefined, copy);
+  broadcastState(session, copy);
 }
 
 async function trackingActive() {
@@ -89,15 +375,16 @@ async function trackingActive() {
   return !!(session && session.id && !session.endedAt);
 }
 
-function resetTrackingGuards() {
-  lastActiveTabId = null;
-  lastDistractorVisit = {};
-}
-
 async function handleSessionStart(session) {
   resetTrackingGuards();
+  await clearBadge();
   await saveState(session, []);
+  await chrome.storage.local.remove(STORAGE_LAST_DRIFT_UI);
   broadcastState(session, []);
+
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  lastActiveTabId = tabs[0]?.id ?? null;
+
   return { ok: true };
 }
 
@@ -109,31 +396,52 @@ async function handleSessionEnd() {
     broadcastState(session, events);
   }
   resetTrackingGuards();
+  await clearBadge();
   return { ok: true };
 }
 
 async function handleClearAll() {
   resetTrackingGuards();
-  await chrome.storage.local.remove([STORAGE_SESSION, STORAGE_EVENTS]);
+  await chrome.storage.local.remove([
+    STORAGE_SESSION,
+    STORAGE_EVENTS,
+    STORAGE_LAST_DRIFT_UI,
+  ]);
   broadcastState(null, []);
+  await clearBadge();
   return { ok: true };
 }
 
-/**
- * @param {chrome.tabs.Tab} tab
- * @param {string} type
- */
-function tabToEvent(tab, type) {
-  const url = tab.url || tab.pendingUrl || "";
-  const domain = url ? hostFromUrl(url) : "";
-  return {
-    timestamp: Date.now(),
-    type,
-    domain: domain || undefined,
-    title: tab.title || undefined,
-    url: url || undefined,
-  };
-}
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg?.type === "OVERLAY_DISMISSED") {
+    void clearBadge();
+    sendResponse({ ok: true });
+    return false;
+  }
+  if (msg?.type === "POPUP_STATE") {
+    loadState()
+      .then(({ session: s, events: ev }) => {
+        const score = computeDriftIndex(ev);
+        const last = ev.length ? ev[ev.length - 1] : null;
+        sendResponse({
+          ok: true,
+          session: s,
+          eventsCount: ev.length,
+          score,
+          driftBand: shouldIntervene(score),
+          lastDomain: last?.domain ?? null,
+          lastTitle: last?.title
+            ? String(last.title).slice(0, 100)
+            : null,
+        });
+      })
+      .catch((e) =>
+        sendResponse({ ok: false, error: String(e?.message || e) }),
+      );
+    return true;
+  }
+  return false;
+});
 
 chrome.runtime.onConnectExternal.addListener((port) => {
   if (port.name !== "breakpoint-dashboard") return;
@@ -167,6 +475,17 @@ chrome.runtime.onMessageExternal.addListener((request, _sender, sendResponse) =>
   return true;
 });
 
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  void (async () => {
+    if (!(await trackingActive())) return;
+    if (!changeInfo.title && !changeInfo.url) return;
+    chrome.tabs.get(tabId, (t) => {
+      if (chrome.runtime.lastError || !t) return;
+      void patchLatestEventForTab(tabId, t);
+    });
+  })();
+});
+
 chrome.tabs.onActivated.addListener(async (activeInfo) => {
   if (!(await trackingActive())) return;
 
@@ -189,7 +508,7 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
 
     chrome.tabs.get(prevTabId, (prev) => {
       if (chrome.runtime.lastError) {
-        appendEvents([tabToEvent(tab, "TAB_SWITCH")]);
+        void appendEvents([tabToEvent(tab, "TAB_SWITCH")]);
         return;
       }
 
@@ -206,6 +525,7 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
           domain,
           title: tab.title || undefined,
           url,
+          tabId: tab.id,
         });
       }
 
@@ -219,12 +539,13 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
             domain,
             title: tab.title || undefined,
             url,
+            tabId: tab.id,
           });
         }
         lastDistractorVisit[domain] = now;
       }
 
-      appendEvents(events);
+      void appendEvents(events);
     });
   });
 });
@@ -239,7 +560,7 @@ chrome.tabs.onCreated.addListener(async (tab) => {
       const url = t.url || t.pendingUrl;
       if (!url || url === "chrome://newtab/" || url.startsWith("chrome://"))
         return;
-      appendEvents([tabToEvent(t, "TAB_CREATE")]);
+      void appendEvents([tabToEvent(t, "TAB_CREATE")]);
     });
   };
 
@@ -272,13 +593,14 @@ chrome.webNavigation.onCommitted.addListener(async (details) => {
 
   chrome.tabs.get(details.tabId, (tab) => {
     if (chrome.runtime.lastError || !tab) return;
-    appendEvents([
+    void appendEvents([
       {
         timestamp: Date.now(),
         type: "NAVIGATION",
         domain: hostFromUrl(url) || undefined,
         title: tab.title || undefined,
         url,
+        tabId: details.tabId,
       },
     ]);
   });
