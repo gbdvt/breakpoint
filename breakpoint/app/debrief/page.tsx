@@ -86,7 +86,7 @@ export default function DebriefPage() {
   return (
     <main className="min-h-screen bg-neutral-50 px-6 py-12">
       <DebriefCard session={session} events={events} />
-      <div className="mx-auto mt-6 max-w-2xl">
+      <div className="mx-auto mt-6 max-w-3xl">
         <button
           type="button"
           onClick={() => void handleFinish()}

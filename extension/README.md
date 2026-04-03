@@ -46,6 +46,8 @@ Click the **extension icon** anytime for the **toolbar popup**: goal, drift load
 
 Dismiss or “I’m staying” on the in-page card clears the badge. There is **no** separate Chrome popup window — only the slick on-page card plus the optional dashboard modal.
 
+While **drift load stays in the intervention band**, the card appears again **each time you land on a distractor tab** (e.g. switch back to YouTube), not only the first time the score crossed the threshold.
+
 Some strict pages may block injection; the **badge** and **toolbar popup** still help.
 
 **First switch after “Start session”** is tracked correctly: on start we record the **currently focused tab** as the baseline, so the next switch (e.g. to YouTube) produces `TAB_SWITCH` / `DISTRACTOR_OPEN` instead of being swallowed as “first activation.”

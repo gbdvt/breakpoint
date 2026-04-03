@@ -7,6 +7,7 @@ import SessionHeader from "@/components/SessionHeader";
 import {
   computeDriftIndex,
   interventionKind,
+  newBatchIndicatesDistractorFocus,
   shouldIntervene,
 } from "@/lib/driftEngine";
 import { getExtensionId, sendExtensionMessage } from "@/lib/extensionBridge";
@@ -26,6 +27,8 @@ export default function SessionPage() {
     typeof interventionKind
   >>("reactive");
   const prevInterveneRef = useRef(false);
+  const prevEventCountRef = useRef(0);
+  const interventionBootstrappedRef = useRef(false);
 
   const tracking =
     !!session && !session.endedAt && !!getExtensionId();
@@ -41,13 +44,35 @@ export default function SessionPage() {
   useEffect(() => {
     if (!hydrated) return;
     saveEvents(events);
+
+    if (!interventionBootstrappedRef.current) {
+      interventionBootstrappedRef.current = true;
+      prevEventCountRef.current = events.length;
+      prevInterveneRef.current = shouldIntervene(computeDriftIndex(events));
+      return;
+    }
+
+    if (events.length < prevEventCountRef.current) {
+      prevEventCountRef.current = events.length;
+      prevInterveneRef.current = shouldIntervene(computeDriftIndex(events));
+      return;
+    }
+
+    const tail = events.slice(prevEventCountRef.current);
+    prevEventCountRef.current = events.length;
+
     const score = computeDriftIndex(events);
-    const crossed = shouldIntervene(score) && !prevInterveneRef.current;
-    if (crossed) {
+    const nowBand = shouldIntervene(score);
+    const crossed = nowBand && !prevInterveneRef.current;
+    const bulkCatchUp = tail.length > 15;
+    const focusOnDistractor =
+      nowBand && !bulkCatchUp && newBatchIndicatesDistractorFocus(tail);
+
+    if (crossed || focusOnDistractor) {
       setModalKind(interventionKind(events));
       setModalOpen(true);
     }
-    prevInterveneRef.current = shouldIntervene(score);
+    prevInterveneRef.current = nowBand;
   }, [events, hydrated]);
 
   async function endSessionForDebrief() {

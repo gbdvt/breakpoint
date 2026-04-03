@@ -72,6 +72,36 @@ export function shouldIntervene(score: number): boolean {
   return score >= 5;
 }
 
+/**
+ * True if this batch includes landing on a distractor (focus left work for a known escape hatch).
+ * Used to re-trigger intervention while already in the drift band, not only the first crossing.
+ */
+export function newBatchIndicatesDistractorFocus(
+  items: BreakpointEvent[],
+): boolean {
+  for (const e of items) {
+    if (e.type === "DISTRACTOR_OPEN") return true;
+    if (
+      e.type === "TAB_SWITCH" &&
+      e.domain &&
+      isDistractorHost(e.domain)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export type AttentionTone = "distractor" | "research" | "neutral" | "unknown";
+
+/** For debrief coloring: where attention sat (by domain). */
+export function attentionTone(domain?: string): AttentionTone {
+  if (!domain) return "unknown";
+  if (isDistractorHost(domain)) return "distractor";
+  if (isResearchHintHost(domain)) return "research";
+  return "neutral";
+}
+
 export type InterventionKind = "reactive" | "research";
 
 /**

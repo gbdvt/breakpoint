@@ -111,6 +111,22 @@ function shouldIntervene(score) {
   return score >= 5;
 }
 
+/** @param {unknown[]} items */
+function newBatchIndicatesDistractorFocus(items) {
+  for (const e of items) {
+    if (!e || typeof e !== "object") continue;
+    if (e.type === "DISTRACTOR_OPEN") return true;
+    if (
+      e.type === "TAB_SWITCH" &&
+      e.domain &&
+      isDistractorHost(String(e.domain))
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function interventionKind(events) {
   const recent = events.slice(-RECENT_WINDOW);
   const tabCreates = recent.filter((e) => e.type === "TAB_CREATE").length;
@@ -298,10 +314,10 @@ async function showDriftIntervention(session, events, triggerTabId) {
 
 /**
  * Keeps badge + drift UI aligned with the rolling score:
- * - Badge clears when score falls below threshold (e.g. you switched back to work).
- * - Overlay only on first crossing into the band (until score drops again).
+ * - Badge clears when score falls below threshold.
+ * - Overlay when you cross into the band OR each time you land on a distractor tab while still in band.
  */
-async function syncDriftIntervention(events, session, triggerTabId) {
+async function syncDriftIntervention(events, session, triggerTabId, newItems) {
   const score = computeDriftIndex(events);
   const nowBand = shouldIntervene(score);
 
@@ -314,7 +330,10 @@ async function syncDriftIntervention(events, session, triggerTabId) {
   const crossed = !prevShouldIntervene;
   prevShouldIntervene = true;
 
-  if (crossed) {
+  const focusOnDistractor =
+    Array.isArray(newItems) && newBatchIndicatesDistractorFocus(newItems);
+
+  if (crossed || focusOnDistractor) {
     await setDriftBadge();
     await showDriftIntervention(session, events, triggerTabId);
   }
@@ -330,7 +349,7 @@ async function appendEvents(newItems) {
   const next = events.concat(newItems);
   await saveState(undefined, next);
   broadcastState(session, next);
-  await syncDriftIntervention(next, session, triggerTabId);
+  await syncDriftIntervention(next, session, triggerTabId, newItems);
 }
 
 /**
