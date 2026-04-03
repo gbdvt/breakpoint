@@ -9,8 +9,9 @@ import {
   interventionKind,
   shouldIntervene,
 } from "@/lib/driftEngine";
-import { simulateResearchSpiral, simulateYoutubeDrift } from "@/lib/fakeEvents";
-import { getEvents, getSession, saveEvents } from "@/lib/storage";
+import { getExtensionId, sendExtensionMessage } from "@/lib/extensionBridge";
+import { useExtensionSessionFeed } from "@/hooks/useExtensionSessionFeed";
+import { getEvents, getSession, saveEvents, saveSession } from "@/lib/storage";
 import type { BreakpointEvent } from "@/types/event";
 import type { FocusSession } from "@/types/session";
 
@@ -20,10 +21,16 @@ export default function SessionPage() {
   const [session, setSession] = useState<FocusSession | null>(null);
   const [events, setEvents] = useState<BreakpointEvent[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
+  const [ending, setEnding] = useState(false);
   const [modalKind, setModalKind] = useState<ReturnType<
     typeof interventionKind
   >>("reactive");
   const prevInterveneRef = useRef(false);
+
+  const tracking =
+    !!session && !session.endedAt && !!getExtensionId();
+
+  useExtensionSessionFeed(tracking, setEvents);
 
   useEffect(() => {
     setSession(getSession());
@@ -42,6 +49,24 @@ export default function SessionPage() {
     }
     prevInterveneRef.current = shouldIntervene(score);
   }, [events, hydrated]);
+
+  async function endSessionForDebrief() {
+    setEnding(true);
+    try {
+      await sendExtensionMessage({ type: "SESSION_END" });
+      const state = await sendExtensionMessage({ type: "GET_STATE" });
+      if (state?.ok) {
+        if (state.session) {
+          saveSession(state.session);
+          setSession(state.session);
+        }
+        if (state.events) saveEvents(state.events);
+      }
+    } finally {
+      setEnding(false);
+    }
+    router.push("/debrief");
+  }
 
   if (!hydrated) {
     return (
@@ -71,14 +96,21 @@ export default function SessionPage() {
   const driftIndex = computeDriftIndex(events);
   const latestDomain = events[events.length - 1]?.domain;
 
-  function addEvents(newEvents: BreakpointEvent[]) {
-    setEvents((prev) => [...prev, ...newEvents]);
-  }
-
   return (
     <main className="min-h-screen bg-neutral-50 px-6 py-12">
       <div className="mx-auto max-w-3xl rounded-2xl border border-neutral-200 bg-white p-8 shadow-sm">
         <SessionHeader session={session} />
+
+        {getExtensionId() ? (
+          <p className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+            Live: extension is recording tab activity for this session.
+          </p>
+        ) : (
+          <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+            Extension ID missing — add NEXT_PUBLIC_BREAKPOINT_EXTENSION_ID to
+            .env.local.
+          </p>
+        )}
 
         <div className="mb-6 rounded-xl bg-neutral-100 p-4">
           <p className="text-sm text-neutral-600">Drift load (rolling)</p>
@@ -88,27 +120,14 @@ export default function SessionPage() {
           </p>
         </div>
 
-        <div className="mb-6 flex flex-wrap gap-3">
+        <div className="mb-6">
           <button
             type="button"
-            onClick={() => addEvents(simulateYoutubeDrift())}
-            className="rounded-xl bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800"
+            disabled={ending}
+            onClick={() => void endSessionForDebrief()}
+            className="rounded-xl border border-neutral-200 bg-white px-4 py-2 text-sm font-medium text-neutral-900 hover:bg-neutral-50 disabled:opacity-60"
           >
-            Simulate YouTube drift
-          </button>
-          <button
-            type="button"
-            onClick={() => addEvents(simulateResearchSpiral())}
-            className="rounded-xl bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800"
-          >
-            Simulate research spiral
-          </button>
-          <button
-            type="button"
-            onClick={() => router.push("/debrief")}
-            className="rounded-xl border border-neutral-200 bg-white px-4 py-2 text-sm font-medium text-neutral-900 hover:bg-neutral-50"
-          >
-            End session → debrief
+            {ending ? "Saving…" : "End session → debrief"}
           </button>
         </div>
 
@@ -119,8 +138,8 @@ export default function SessionPage() {
           <div className="max-h-80 space-y-2 overflow-y-auto">
             {events.length === 0 && (
               <p className="text-sm text-neutral-500">
-                No events yet. Use the demo buttons or connect the extension
-                later.
+                No events yet. Switch tabs, open new ones, or navigate — the
+                extension will append rows here.
               </p>
             )}
             {events.map((event, index) => (

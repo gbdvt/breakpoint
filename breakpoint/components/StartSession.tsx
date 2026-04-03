@@ -2,8 +2,10 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { clearEvents, saveSession } from "@/lib/storage";
+import { clearEvents, clearSession, saveSession } from "@/lib/storage";
 import type { FocusSession, SessionMode } from "@/types/session";
+import { getExtensionId, sendExtensionMessage } from "@/lib/extensionBridge";
+import ExtensionHint from "@/components/ExtensionHint";
 
 const MODES: SessionMode[] = ["lecture", "coding", "writing", "research"];
 
@@ -12,8 +14,10 @@ export default function StartSession() {
   const [goal, setGoal] = useState("");
   const [mode, setMode] = useState<SessionMode>("lecture");
   const [durationMin, setDurationMin] = useState(45);
+  const [pending, setPending] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
 
-  function handleStart() {
+  async function handleStart() {
     if (!goal.trim()) return;
 
     const session: FocusSession = {
@@ -24,9 +28,39 @@ export default function StartSession() {
       startedAt: Date.now(),
     };
 
-    clearEvents();
-    saveSession(session);
-    router.push("/session");
+    setStartError(null);
+
+    if (!getExtensionId()) {
+      setStartError(
+        "Set NEXT_PUBLIC_BREAKPOINT_EXTENSION_ID in .env.local (see extension README), then restart npm run dev.",
+      );
+      return;
+    }
+
+    setPending(true);
+    try {
+      clearEvents();
+      saveSession(session);
+
+      const ack = await sendExtensionMessage({
+        type: "SESSION_START",
+        session,
+      });
+
+      if (!ack || ack.ok !== true) {
+        clearSession();
+        setStartError(
+          !ack
+            ? "Extension did not respond. Use Chrome, load the unpacked extension, and confirm this origin is listed under externally_connectable in its manifest."
+            : `Could not start tracking (${"error" in ack ? ack.error : "unknown"}).`,
+        );
+        return;
+      }
+
+      router.push("/session");
+    } finally {
+      setPending(false);
+    }
   }
 
   return (
@@ -36,8 +70,9 @@ export default function StartSession() {
         Start a session
       </h1>
       <p className="mb-6 text-sm text-neutral-600">
-        Set a goal and mode. We&apos;ll watch for drift patterns (demo uses
-        simulated browser events until the extension ships).
+        Sessions are tracked by the Breakpoint Chrome extension: tab switches,
+        new tabs, navigations, and repeat visits to distractor sites. Data stays
+        local in the browser.
       </p>
 
       <label className="mb-2 block text-sm font-medium text-neutral-700">
@@ -82,13 +117,25 @@ export default function StartSession() {
         className="mb-6 w-full rounded-xl border border-neutral-300 px-4 py-3 text-neutral-900 outline-none focus:border-neutral-500"
       />
 
+      {startError && (
+        <p
+          className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900"
+          role="alert"
+        >
+          {startError}
+        </p>
+      )}
+
       <button
         type="button"
-        onClick={handleStart}
-        className="w-full rounded-xl bg-neutral-900 px-4 py-3 font-medium text-white transition hover:bg-neutral-800"
+        disabled={pending}
+        onClick={() => void handleStart()}
+        className="w-full rounded-xl bg-neutral-900 px-4 py-3 font-medium text-white transition hover:bg-neutral-800 disabled:opacity-60"
       >
-        Start session
+        {pending ? "Starting…" : "Start session"}
       </button>
+
+      <ExtensionHint />
     </div>
   );
 }

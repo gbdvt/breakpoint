@@ -3,7 +3,15 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import DebriefCard from "@/components/DebriefCard";
-import { clearEvents, clearSession, getEvents, getSession } from "@/lib/storage";
+import { sendExtensionMessage } from "@/lib/extensionBridge";
+import {
+  clearEvents,
+  clearSession,
+  getEvents,
+  getSession,
+  saveEvents,
+  saveSession,
+} from "@/lib/storage";
 import type { BreakpointEvent } from "@/types/event";
 import type { FocusSession } from "@/types/session";
 
@@ -14,9 +22,33 @@ export default function DebriefPage() {
   const [events, setEvents] = useState<BreakpointEvent[]>([]);
 
   useEffect(() => {
-    setSession(getSession());
-    setEvents(getEvents());
-    setHydrated(true);
+    let cancelled = false;
+
+    void (async () => {
+      const localSession = getSession();
+      const localEvents = getEvents();
+      const remote = await sendExtensionMessage({ type: "GET_STATE" });
+
+      if (cancelled) return;
+
+      if (remote?.ok && remote.session) {
+        setSession(remote.session as FocusSession);
+        const ev = Array.isArray(remote.events)
+          ? (remote.events as BreakpointEvent[])
+          : localEvents;
+        setEvents(ev);
+        saveSession(remote.session as FocusSession);
+        saveEvents(ev);
+      } else {
+        setSession(localSession);
+        setEvents(localEvents);
+      }
+      setHydrated(true);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   if (!hydrated) {
@@ -44,7 +76,8 @@ export default function DebriefPage() {
     );
   }
 
-  function handleFinish() {
+  async function handleFinish() {
+    await sendExtensionMessage({ type: "CLEAR_ALL" });
     clearEvents();
     clearSession();
     router.push("/");
@@ -56,7 +89,7 @@ export default function DebriefPage() {
       <div className="mx-auto mt-6 max-w-2xl">
         <button
           type="button"
-          onClick={handleFinish}
+          onClick={() => void handleFinish()}
           className="rounded-xl bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800"
         >
           Finish and clear data
