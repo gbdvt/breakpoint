@@ -36,7 +36,7 @@ export function isDistractorHost(domain?: string): boolean {
   );
 }
 
-function isResearchHintHost(domain?: string): boolean {
+export function isResearchHintHost(domain?: string): boolean {
   const host = normalizeHost(domain);
   if (!host) return false;
   return RESEARCH_HINT_ROOTS.some(

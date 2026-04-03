@@ -1,9 +1,10 @@
-import StartSession from "@/components/StartSession";
+import AppShell from "@/src/components/ui/AppShell";
+import DashboardPage from "@/src/components/dashboard/DashboardPage";
 
 export default function HomePage() {
   return (
-    <main className="min-h-screen bg-neutral-50 px-6 py-12">
-      <StartSession />
-    </main>
+    <AppShell userFirstName="Gaspar">
+      <DashboardPage />
+    </AppShell>
   );
 }

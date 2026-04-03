@@ -3,9 +3,14 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { clearEvents, clearSession, saveSession } from "@/lib/storage";
-import type { FocusSession, SessionMode } from "@/types/session";
+import type {
+  AiTaskEstimate,
+  FocusSession,
+  SessionMode,
+} from "@/types/session";
 import { getExtensionId, sendExtensionMessage } from "@/lib/extensionBridge";
 import ExtensionHint from "@/components/ExtensionHint";
+import { getUserProfile, profileForPrompt } from "@/lib/userProfile";
 
 const MODES: SessionMode[] = ["lecture", "coding", "writing", "research"];
 
@@ -16,6 +21,70 @@ export default function StartSession() {
   const [durationMin, setDurationMin] = useState(45);
   const [pending, setPending] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
+  const [estimateLoading, setEstimateLoading] = useState(false);
+  const [estimateError, setEstimateError] = useState<string | null>(null);
+  const [aiEstimate, setAiEstimate] = useState<AiTaskEstimate | null>(null);
+  /** Goal text at the time of the last successful estimate (avoid stale attach). */
+  const [estimateGoalSnap, setEstimateGoalSnap] = useState<string | null>(null);
+
+  async function fetchEstimate() {
+    if (!goal.trim()) return;
+    setEstimateError(null);
+    setEstimateLoading(true);
+    try {
+      const res = await fetch("/api/ai/estimate-task", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          goal: goal.trim(),
+          mode,
+          plannedDurationMin: durationMin,
+          profile: profileForPrompt(getUserProfile()),
+        }),
+      });
+      const data = (await res.json()) as {
+        minutesMin?: number;
+        minutesMax?: number;
+        oneLiner?: string;
+        error?: string;
+      };
+      if (!res.ok) {
+        setEstimateError(data.error ?? "Estimate failed");
+        setAiEstimate(null);
+        setEstimateGoalSnap(null);
+        return;
+      }
+      if (
+        typeof data.minutesMin !== "number" ||
+        typeof data.minutesMax !== "number" ||
+        typeof data.oneLiner !== "string"
+      ) {
+        setEstimateError("Unexpected response");
+        return;
+      }
+      setAiEstimate({
+        minutesMin: data.minutesMin,
+        minutesMax: data.minutesMax,
+        oneLiner: data.oneLiner,
+        estimatedAt: Date.now(),
+      });
+      setEstimateGoalSnap(goal.trim());
+    } catch {
+      setEstimateError("Network error");
+      setAiEstimate(null);
+      setEstimateGoalSnap(null);
+    } finally {
+      setEstimateLoading(false);
+    }
+  }
+
+  function applyMidpointToPlan() {
+    if (!aiEstimate) return;
+    const mid = Math.round(
+      (aiEstimate.minutesMin + aiEstimate.minutesMax) / 2,
+    );
+    setDurationMin(Math.min(480, Math.max(5, mid)));
+  }
 
   async function handleStart() {
     if (!goal.trim()) return;
@@ -26,6 +95,9 @@ export default function StartSession() {
       mode,
       durationMin,
       startedAt: Date.now(),
+      ...(aiEstimate && estimateGoalSnap === goal.trim()
+        ? { aiEstimate }
+        : {}),
     };
 
     setStartError(null);
@@ -64,7 +136,7 @@ export default function StartSession() {
   }
 
   return (
-    <div className="mx-auto mt-16 max-w-xl rounded-2xl border border-neutral-200 bg-white p-8 shadow-sm">
+    <div className="mx-auto max-w-xl rounded-2xl border border-neutral-200 bg-white p-8 shadow-sm">
       <p className="mb-1 text-sm font-medium text-amber-700">Breakpoint</p>
       <h1 className="mb-2 text-3xl font-semibold text-neutral-900">
         Start a session
@@ -114,8 +186,53 @@ export default function StartSession() {
         max={480}
         value={durationMin}
         onChange={(e) => setDurationMin(Number(e.target.value))}
-        className="mb-6 w-full rounded-xl border border-neutral-300 px-4 py-3 text-neutral-900 outline-none focus:border-neutral-500"
+        className="mb-3 w-full rounded-xl border border-neutral-300 px-4 py-3 text-neutral-900 outline-none focus:border-neutral-500"
       />
+
+      <div className="mb-6 rounded-xl border border-violet-200 bg-violet-50/50 p-4">
+        <p className="mb-2 text-sm font-medium text-violet-950">
+          AI time estimate (optional, ~1 cheap call)
+        </p>
+        <p className="mb-3 text-xs text-violet-900/80">
+          Uses your task text, mode, planned block, and local rolling stats from
+          past sessions (length, peak drift, planned time). Re-run if you edit the
+          task. Set{" "}
+          <code className="rounded bg-white/80 px-1">OPENAI_API_KEY</code> in{" "}
+          <code className="rounded bg-white/80 px-1">.env.local</code>.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            disabled={estimateLoading || !goal.trim()}
+            onClick={() => void fetchEstimate()}
+            className="rounded-lg bg-violet-900 px-3 py-2 text-sm font-medium text-white hover:bg-violet-800 disabled:opacity-50"
+          >
+            {estimateLoading ? "Estimating…" : "Estimate time"}
+          </button>
+          {aiEstimate ? (
+            <button
+              type="button"
+              onClick={applyMidpointToPlan}
+              className="rounded-lg border border-violet-300 bg-white px-3 py-2 text-sm font-medium text-violet-950 hover:bg-violet-50"
+            >
+              Use midpoint for plan
+            </button>
+          ) : null}
+        </div>
+        {estimateError ? (
+          <p className="mt-2 text-sm text-red-800" role="alert">
+            {estimateError}
+          </p>
+        ) : null}
+        {aiEstimate ? (
+          <p className="mt-3 text-sm text-violet-950">
+            <span className="font-semibold">
+              ~{aiEstimate.minutesMin}–{aiEstimate.minutesMax} min
+            </span>{" "}
+            focused work · {aiEstimate.oneLiner}
+          </p>
+        ) : null}
+      </div>
 
       {startError && (
         <p

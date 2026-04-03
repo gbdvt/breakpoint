@@ -1,0 +1,52 @@
+@import "tailwindcss";
+
+:root {
+  --font-plus-jakarta: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  min-height: 100vh;
+  background: #060a14;
+  color: #fafafa;
+  font-family:
+    "Plus Jakarta Sans",
+    system-ui,
+    -apple-system,
+    sans-serif;
+}
+
+/* Frameless floating webview: let OS blur / desktop show through */
+html.floating-root,
+body.floating-window {
+  background: transparent !important;
+  overflow: hidden;
+}
+
+body.floating-window #root {
+  min-height: 100vh;
+  background: transparent;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* Drag region hint for WebKit */
+[data-tauri-drag-region] {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+.no-drag,
+button,
+a,
+input {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}

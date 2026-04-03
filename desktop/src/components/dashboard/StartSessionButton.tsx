@@ -1,0 +1,40 @@
+"use client";
+
+import { motion } from "framer-motion";
+import { isTauri, openFloatingWindow } from "@/lib/tauriBridge";
+
+export default function StartSessionButton() {
+  return (
+    <motion.div
+      whileHover={{ scale: 1.01 }}
+      whileTap={{ scale: 0.99 }}
+      className="mt-6"
+    >
+      <button
+        type="button"
+        onClick={() => {
+          if (isTauri()) void openFloatingWindow();
+          else
+            alert(
+              "Run the desktop app: cd desktop && npm run tauri:dev — then use the floating session window.",
+            );
+        }}
+        className="flex w-full items-center justify-center gap-2 rounded-[22px] border border-indigo-400/30 bg-gradient-to-r from-indigo-600/90 via-blue-600/85 to-violet-600/80 px-6 py-4 text-[14px] font-semibold text-white shadow-[0_12px_40px_rgba(79,70,229,0.35)] transition hover:border-indigo-300/40 hover:shadow-[0_16px_48px_rgba(79,70,229,0.42)]"
+        style={{
+          boxShadow:
+            "0 0 0 1px rgba(255,255,255,0.08) inset, 0 12px 40px rgba(79,70,229,0.35)",
+        }}
+      >
+        <span className="opacity-90">
+          {isTauri() ? "Open floating session" : "Open focus window (dev)"}
+        </span>
+        <span className="text-white/60">↗</span>
+      </button>
+      <p className="mt-2 text-center text-[11px] text-white/35">
+        {isTauri()
+          ? "Always-on-top glass bar · distraction state + timer"
+          : "Use Tauri dev for the real OS overlay. Chrome extension still runs from the Next app."}
+      </p>
+    </motion.div>
+  );
+}

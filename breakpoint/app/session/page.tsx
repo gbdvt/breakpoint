@@ -1,18 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import InterventionModal from "@/components/InterventionModal";
 import SessionHeader from "@/components/SessionHeader";
-import {
-  computeDriftIndex,
-  interventionKind,
-  newBatchIndicatesDistractorFocus,
-  shouldIntervene,
-} from "@/lib/driftEngine";
+import { liveBehaviorLabel } from "@/lib/debriefInsights";
+import { computeDriftIndex } from "@/lib/driftEngine";
 import { getExtensionId, sendExtensionMessage } from "@/lib/extensionBridge";
 import { useExtensionSessionFeed } from "@/hooks/useExtensionSessionFeed";
 import { getEvents, getSession, saveEvents, saveSession } from "@/lib/storage";
+import { recordSessionComplete } from "@/lib/userProfile";
 import type { BreakpointEvent } from "@/types/event";
 import type { FocusSession } from "@/types/session";
 
@@ -21,14 +17,7 @@ export default function SessionPage() {
   const [hydrated, setHydrated] = useState(false);
   const [session, setSession] = useState<FocusSession | null>(null);
   const [events, setEvents] = useState<BreakpointEvent[]>([]);
-  const [modalOpen, setModalOpen] = useState(false);
   const [ending, setEnding] = useState(false);
-  const [modalKind, setModalKind] = useState<ReturnType<
-    typeof interventionKind
-  >>("reactive");
-  const prevInterveneRef = useRef(false);
-  const prevEventCountRef = useRef(0);
-  const interventionBootstrappedRef = useRef(false);
 
   const tracking =
     !!session && !session.endedAt && !!getExtensionId();
@@ -44,35 +33,6 @@ export default function SessionPage() {
   useEffect(() => {
     if (!hydrated) return;
     saveEvents(events);
-
-    if (!interventionBootstrappedRef.current) {
-      interventionBootstrappedRef.current = true;
-      prevEventCountRef.current = events.length;
-      prevInterveneRef.current = shouldIntervene(computeDriftIndex(events));
-      return;
-    }
-
-    if (events.length < prevEventCountRef.current) {
-      prevEventCountRef.current = events.length;
-      prevInterveneRef.current = shouldIntervene(computeDriftIndex(events));
-      return;
-    }
-
-    const tail = events.slice(prevEventCountRef.current);
-    prevEventCountRef.current = events.length;
-
-    const score = computeDriftIndex(events);
-    const nowBand = shouldIntervene(score);
-    const crossed = nowBand && !prevInterveneRef.current;
-    const bulkCatchUp = tail.length > 15;
-    const focusOnDistractor =
-      nowBand && !bulkCatchUp && newBatchIndicatesDistractorFocus(tail);
-
-    if (crossed || focusOnDistractor) {
-      setModalKind(interventionKind(events));
-      setModalOpen(true);
-    }
-    prevInterveneRef.current = nowBand;
   }, [events, hydrated]);
 
   async function endSessionForDebrief() {
@@ -86,6 +46,12 @@ export default function SessionPage() {
           setSession(state.session);
         }
         if (state.events) saveEvents(state.events);
+        const sess = state.session as FocusSession | undefined;
+        const evs =
+          (state.events as BreakpointEvent[] | undefined) ?? getEvents();
+        if (sess?.endedAt) {
+          recordSessionComplete(sess, evs);
+        }
       }
     } finally {
       setEnding(false);
@@ -119,12 +85,16 @@ export default function SessionPage() {
   }
 
   const driftIndex = computeDriftIndex(events);
-  const latestDomain = events[events.length - 1]?.domain;
+  const behaviorHint = liveBehaviorLabel(events);
 
   return (
     <main className="min-h-screen bg-neutral-50 px-6 py-12">
       <div className="mx-auto max-w-3xl rounded-2xl border border-neutral-200 bg-white p-8 shadow-sm">
         <SessionHeader session={session} />
+        <p className="mb-4 text-sm leading-relaxed text-neutral-600">
+          Breakpoint catches when overload turns into avoidance. When drift is
+          high, the extension shows a small in-tab card only — nothing modal here.
+        </p>
 
         {getExtensionId() ? (
           <p className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
@@ -143,6 +113,11 @@ export default function SessionPage() {
           <p className="mt-1 text-xs text-neutral-500">
             Rule-based score from recent events; not a medical measure.
           </p>
+          {behaviorHint ? (
+            <p className="mt-2 text-sm font-medium text-amber-900/90">
+              {behaviorHint}
+            </p>
+          ) : null}
         </div>
 
         <div className="mb-6">
@@ -182,14 +157,6 @@ export default function SessionPage() {
           </div>
         </div>
       </div>
-
-      <InterventionModal
-        open={modalOpen}
-        kind={modalKind}
-        goal={session.goal}
-        domain={latestDomain}
-        onClose={() => setModalOpen(false)}
-      />
     </main>
   );
 }

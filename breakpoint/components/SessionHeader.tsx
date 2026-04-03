@@ -39,6 +39,13 @@ export default function SessionHeader({ session }: Props) {
           Elapsed {formatElapsed(elapsed)}
         </span>
       </div>
+      {session.aiEstimate ? (
+        <p className="mt-3 rounded-lg border border-violet-200 bg-violet-50/80 px-3 py-2 text-sm text-violet-950">
+          <span className="font-medium">AI estimate: </span>~
+          {session.aiEstimate.minutesMin}–{session.aiEstimate.minutesMax} min
+          focused work · {session.aiEstimate.oneLiner}
+        </p>
+      ) : null}
     </header>
   );
 }

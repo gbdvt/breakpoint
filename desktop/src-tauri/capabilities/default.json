@@ -1,0 +1,6 @@
+{
+  "identifier": "default",
+  "description": "Default permissions for Breakpoint webviews",
+  "windows": ["*"],
+  "permissions": ["core:default"]
+}
