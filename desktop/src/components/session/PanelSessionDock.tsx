@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useChromeBridgeFeed } from "@/hooks/useChromeBridgeFeed";
 import { sessionIsLive } from "@/lib/liveSessionDetail";
+import { setFocusStateActive } from "@/lib/syncFocusStateRow";
 import { isTauri, queueSessionEnd } from "@/lib/tauriBridge";
 
 export default function PanelSessionDock() {
@@ -38,6 +39,7 @@ export default function PanelSessionDock() {
     setEnding(true);
     try {
       await queueSessionEnd();
+      void setFocusStateActive(false);
     } catch {
       /* extension will pick up on next poll retry */
     } finally {

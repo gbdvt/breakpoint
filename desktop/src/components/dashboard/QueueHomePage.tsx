@@ -23,6 +23,7 @@ import {
   completeRootlyActionItem,
   importRootlyActionItems,
 } from "@/lib/rootlySync";
+import { setFocusStateActive } from "@/lib/syncFocusStateRow";
 import { isTauri, queueSessionStart } from "@/lib/tauriBridge";
 
 type LocalTask = Task & { estimating?: boolean };
@@ -304,6 +305,7 @@ export default function QueueHomePage() {
         durationMin,
         startedAt: Date.now(),
       });
+      void setFocusStateActive(true);
     } catch (e) {
       setStartError(e instanceof Error ? e.message : "Couldn’t start");
     } finally {
