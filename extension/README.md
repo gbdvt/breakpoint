@@ -38,7 +38,7 @@ Captures **real** tab activity while a dashboard session is active and keeps it 
 When drift **first** crosses the threshold, the service worker:
 
 1. Sets the toolbar **badge** to `!` (amber).
-2. Injects a **floating card** (bottom-right, Shadow DOM) into the best tab: **focused tab if it’s a distractor**, else the **last known distractor tab** (e.g. YouTube in the background while you’re on localhost).
+2. Injects a **centered card** (Shadow DOM + light dim) for **drift-in-band** and **distractor sites** (same **Pause** + countdown as drift; no separate “heads up” copy). **Bottom-right pills** are only for **ambiguous** states (new-tab “Waiting”, “waiting on tab title”, API unavailable, green “on track”). **AI “off focus”** still uses a separate centered alert.
 
 When your **rolling drift score drops** below the threshold again, the **badge clears automatically**.
 

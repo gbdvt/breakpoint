@@ -5,7 +5,7 @@
  * Drift scoring below mirrors breakpoint/lib/driftEngine.ts — keep in sync when tuning.
  * Tab titles are captured on events and refreshed via tabs.onUpdated (YouTube, ChatGPT, etc.).
  * YouTube: youtubeProbe.js reads video.duration; caption transcript → Next API → transcriptBullets on queue events.
- * Drift: minimal pills (amber wait / rose slip) + compact drift card; ChatGPT title → relevance check via local Next API.
+ * Drift: centered drift card in band; centered red/rose for clear slip (AI off-focus, distractor heads-up); bottom-right minimal only for ambiguous (wait / title / API).
  */
 
 const STORAGE_SESSION = "breakpoint_active_session";
@@ -14,6 +14,10 @@ const STORAGE_EVENTS = "breakpoint_events";
 const STORAGE_LAST_DRIFT_UI = "breakpoint_last_drift_ui";
 /** Episode anchor for overlay: same 3s→urgent + 32s teardown across distractor tab switches. */
 const STORAGE_OVERLAY_EPISODE = "breakpoint_overlay_episode";
+/** After in-page "Continue", block drift + distractor overlays until this timestamp (ms). */
+const STORAGE_CONTINUE_SNOOZE_UNTIL = "breakpoint_continue_snooze_until";
+/** Cooldown before another drift/distractor intervention after Continue. */
+const CONTINUE_SNOOZE_MS = 3 * 60 * 1000;
 
 const QUEUE_TOTAL_CAP_MIN = 180;
 /** Per-video ceiling for queue minutes (aligned with breakpoint/lib/researchQueueEstimate.ts). */
@@ -73,7 +77,7 @@ const REACTIVE_NUDGE_TAB_DEBOUNCE_MS = 100;
 let reactiveNudgeLastByTab = new Map();
 
 /** Per-tab throttle for “you landed on a distractor” nudges (SPA can fire often). */
-const DISTRACTOR_NUDGE_TAB_MS = 2800;
+const DISTRACTOR_NUDGE_TAB_MS = 1100;
 /** @type {Map<number, number>} */
 let distractorNudgeLastByTab = new Map();
 
@@ -232,8 +236,17 @@ function estimateQueueDeltaFromBatch(items) {
   if (!Array.isArray(items)) return 0;
   let sum = 0;
   for (const e of items) {
-    if (!e || typeof e !== "object" || e.type !== "TAB_CREATE") continue;
-    sum += tabCreateQueueMinutes(e);
+    if (!e || typeof e !== "object") continue;
+    if (e.type === "TAB_CREATE") {
+      sum += tabCreateQueueMinutes(e);
+      continue;
+    }
+    if (e.type === "NAVIGATION") {
+      const url = e.url ? String(e.url) : "";
+      if (!isYoutubeWatchLikeUrl(url)) continue;
+      const m = minutesFromVideoDurationSec(e.videoDurationSec);
+      sum += m != null ? m : 6;
+    }
   }
   return Math.min(Math.round(sum), QUEUE_TOTAL_CAP_MIN);
 }
@@ -272,6 +285,10 @@ function newBatchTriggersDriftUi(items) {
     if (!e || typeof e !== "object") continue;
     if (e.type === "DISTRACTOR_OPEN") return true;
     if (e.type === "TAB_CREATE") return true;
+    if (e.type === "NAVIGATION") {
+      const url = e.url ? String(e.url) : "";
+      if (isYoutubeWatchLikeUrl(url)) return true;
+    }
     if (
       e.type === "TAB_SWITCH" &&
       e.domain &&
@@ -444,6 +461,21 @@ function buildDriftPayload(_session, events, newItems) {
   return { kind, siteLabel, queueDeltaMin, queueTotalMin };
 }
 
+function formatMinimalQueueCaption(meta) {
+  const d =
+    typeof meta.queueDeltaMin === "number" && meta.queueDeltaMin > 0
+      ? Math.round(meta.queueDeltaMin)
+      : 0;
+  const t =
+    typeof meta.queueTotalMin === "number"
+      ? Math.max(0, Math.round(meta.queueTotalMin))
+      : 0;
+  const parts = [];
+  if (d > 0) parts.push(`+${d}m`);
+  parts.push(`~${t}m`);
+  return parts.join(" · ");
+}
+
 async function tabPageIsInjectableHttps(tabId) {
   try {
     const t = await chrome.tabs.get(tabId);
@@ -455,6 +487,20 @@ async function tabPageIsInjectableHttps(tabId) {
 }
 
 async function pushMinimalOverlay(tabId, payload) {
+  if (tabId == null) return;
+  await chrome.storage.local.set({ [STORAGE_LAST_DRIFT_UI]: payload });
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ["overlay.js"],
+    });
+  } catch (e) {
+    console.warn("[Breakpoint] overlay inject failed", e);
+  }
+}
+
+/** Centered in-page card (clear focus-loss); same inject path as drift. */
+async function pushCenteredAlert(tabId, payload) {
   if (tabId == null) return;
   await chrome.storage.local.set({ [STORAGE_LAST_DRIFT_UI]: payload });
   try {
@@ -521,11 +567,11 @@ async function runIntentClassify(tabId, goal, title) {
     return;
   }
   if (rel === false) {
-    await pushMinimalOverlay(tabId, {
-      variant: "minimal",
+    await pushCenteredAlert(tabId, {
+      variant: "centered_alert",
       tone: "red",
-      primary: "Off focus",
-      secondary: "",
+      headline: "Off focus",
+      subline: "This tab may not match your goal",
       dismissAt: now + 7000,
     });
     return;
@@ -541,7 +587,7 @@ async function runIntentClassify(tabId, goal, title) {
 
 async function beginIntentWatch(tabId) {
   if (tabId == null) return;
-  const { session } = await loadState();
+  const { session, events } = await loadState();
   if (!session?.id || session.endedAt) return;
   const goal = String(session.goal ?? "").trim();
   if (!goal) return;
@@ -566,12 +612,22 @@ async function beginIntentWatch(tabId) {
     goal: goal.slice(0, 500),
   });
 
+  const last = events.length ? events[events.length - 1] : null;
+  const batch =
+    last && last.type === "TAB_CREATE" && last.tabId === tabId
+      ? [last]
+      : [];
+  const meta = buildDriftPayload(session, events, batch);
+  const q = formatMinimalQueueCaption(meta);
+  const secondary =
+    q !== "~0m" ? `Waiting on tab title · ${q}` : "Waiting on tab title";
+
   const now = Date.now();
   await pushMinimalOverlay(tabId, {
     variant: "minimal",
     tone: "amber",
     primary: "…",
-    secondary: "Waiting on tab title",
+    secondary,
     dismissAt: now + 120_000,
   });
 }
@@ -626,47 +682,53 @@ function shouldFireReactiveNudgeOnTab(tabId, now) {
 }
 
 /**
- * Ambiguous moment (e.g. new tab): amber “Waiting” — always shown when injectable.
+ * Amber pill after a real tab open: queue from events (must run after TAB_CREATE is saved).
  */
 async function fireReactiveNudge(tabId) {
   const now = Date.now();
   if (!shouldFireReactiveNudgeOnTab(tabId, now)) return;
   if (!(await tabPageIsInjectableHttps(tabId))) return;
 
-  const { session } = await loadState();
+  const { session, events } = await loadState();
   if (!session?.id || session.endedAt) return;
+
+  const last = events.length ? events[events.length - 1] : null;
+  const batch =
+    last && last.type === "TAB_CREATE" ? [last] : [];
+  const meta = buildDriftPayload(session, events, batch);
+  const q = formatMinimalQueueCaption(meta);
+  const primary = q !== "~0m" ? q : "New tab";
 
   await pushMinimalOverlay(tabId, {
     variant: "minimal",
     tone: "amber",
-    primary: "Waiting",
+    primary,
     secondary: "",
     dismissAt: now + 4000,
   });
 }
 
 /**
- * On tabs.onCreated: inject immediately into first injectable tab (opener → last focus → new tab).
- * New tabs are often chrome:// until they load; opener is usually still https.
+ * After TAB_CREATE is appended, nudge the same injectable surface as before (opener → last focus → new tab).
  */
-async function tryReactiveNudgeOnTabCreated(tab) {
-  if (tab.id == null) return;
-
+async function fireReactiveNudgeAfterCreate(createdTab) {
+  if (createdTab.id == null) return;
+  let tabId = null;
   if (
-    tab.openerTabId != null &&
-    (await tabPageIsInjectableHttps(tab.openerTabId))
+    createdTab.openerTabId != null &&
+    (await tabPageIsInjectableHttps(createdTab.openerTabId))
   ) {
-    await fireReactiveNudge(tab.openerTabId);
-    return;
-  }
-  if (
+    tabId = createdTab.openerTabId;
+  } else if (
     lastActiveTabId != null &&
     (await tabPageIsInjectableHttps(lastActiveTabId))
   ) {
-    await fireReactiveNudge(lastActiveTabId);
-    return;
+    tabId = lastActiveTabId;
+  } else if (await tabPageIsInjectableHttps(createdTab.id)) {
+    tabId = createdTab.id;
   }
-  await fireReactiveNudge(tab.id);
+  if (tabId == null) return;
+  await fireReactiveNudge(tabId);
 }
 
 /** Domain/host label for distractor check (event.domain or parsed from url). */
@@ -691,23 +753,44 @@ function shouldFireDistractorNudgeOnTab(tabId, now) {
 }
 
 /**
- * Listed high-drift host: minimal rose pill (no domain names).
+ * Listed high-drift host: same centered Pause + countdown as drift UI (neutral, no “heads up”).
  */
 async function fireDistractorSiteNudge(tabId) {
   const now = Date.now();
   if (!shouldFireDistractorNudgeOnTab(tabId, now)) return;
   if (!(await tabPageIsInjectableHttps(tabId))) return;
 
-  const { session } = await loadState();
+  const snoozeUntil = (
+    await chrome.storage.local.get(STORAGE_CONTINUE_SNOOZE_UNTIL)
+  )[STORAGE_CONTINUE_SNOOZE_UNTIL];
+  if (typeof snoozeUntil === "number" && Date.now() < snoozeUntil) return;
+
+  const { session, events } = await loadState();
   if (!session?.id || session.endedAt) return;
 
-  await pushMinimalOverlay(tabId, {
-    variant: "minimal",
-    tone: "rose",
-    primary: "Heads up",
-    secondary: "",
-    dismissAt: now + 3800,
+  const driftMeta = buildDriftPayload(session, events, []);
+
+  await chrome.storage.local.set({
+    [STORAGE_LAST_DRIFT_UI]: {
+      variant: "drift",
+      neutralTone: true,
+      dismissKind: "nudge",
+      anchorAt: now,
+      settleEndAt: now + 2800,
+      dwellMs: 180000,
+      queueDeltaMin: driftMeta.queueDeltaMin,
+      queueTotalMin: driftMeta.queueTotalMin,
+      siteLabel: driftMeta.siteLabel,
+    },
   });
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ["overlay.js"],
+    });
+  } catch (e) {
+    console.warn("[Breakpoint] overlay inject failed", e);
+  }
 }
 
 /**
@@ -779,6 +862,11 @@ async function showDriftIntervention(session, events, triggerTabId, opts) {
   const crossed = opts?.crossed === true;
   const newItems = Array.isArray(opts?.newItems) ? opts.newItems : [];
   const now = Date.now();
+
+  const snoozeUntil = (
+    await chrome.storage.local.get(STORAGE_CONTINUE_SNOOZE_UNTIL)
+  )[STORAGE_CONTINUE_SNOOZE_UNTIL];
+  if (typeof snoozeUntil === "number" && Date.now() < snoozeUntil) return;
 
   const prevEp = (await chrome.storage.local.get(STORAGE_OVERLAY_EPISODE))[
     STORAGE_OVERLAY_EPISODE
@@ -1112,6 +1200,40 @@ async function patchEventWithVideoDuration(tabId, durationSec) {
   copy[idx] = { ...prev, videoDurationSec: Math.round(durationSec) };
   await saveState(undefined, copy);
   broadcastState(session, copy);
+
+  const freshTotal = estimateQueueTotalFromEvents(copy);
+  const newM = minutesFromVideoDurationSec(Math.round(durationSec));
+  let oldM = 0;
+  if (prev.type === "NAVIGATION" && isYoutubeWatchLikeUrl(String(prev.url || ""))) {
+    oldM = minutesFromVideoDurationSec(prev.videoDurationSec) ?? 6;
+  } else if (prev.type === "TAB_CREATE") {
+    const u = prev.url ? String(prev.url) : "";
+    if (isYoutubeHostFromEvent(prev.domain, u)) {
+      oldM = minutesFromVideoDurationSec(prev.videoDurationSec) ?? 7;
+    }
+  }
+
+  const ui = await chrome.storage.local.get(STORAGE_LAST_DRIFT_UI);
+  const p = ui[STORAGE_LAST_DRIFT_UI];
+  if (p && typeof p === "object" && p.variant === "drift") {
+    const patchPayload = { ...p, queueTotalMin: freshTotal };
+    if (
+      newM != null &&
+      typeof p.queueDeltaMin === "number" &&
+      oldM >= 0
+    ) {
+      patchPayload.queueDeltaMin = Math.max(
+        0,
+        Math.min(
+          QUEUE_TOTAL_CAP_MIN,
+          Math.round(p.queueDeltaMin - oldM + newM),
+        ),
+      );
+    }
+    await chrome.storage.local.set({
+      [STORAGE_LAST_DRIFT_UI]: patchPayload,
+    });
+  }
 }
 
 async function tryProbeAndPatchVideoDuration(tabId) {
@@ -1265,7 +1387,10 @@ async function handleSessionEnd() {
   }
   resetTrackingGuards();
   await clearBadge();
-  await chrome.storage.local.remove(STORAGE_OVERLAY_EPISODE);
+  await chrome.storage.local.remove([
+    STORAGE_OVERLAY_EPISODE,
+    STORAGE_CONTINUE_SNOOZE_UNTIL,
+  ]);
   return { ok: true };
 }
 
@@ -1276,6 +1401,7 @@ async function handleClearAll() {
     STORAGE_EVENTS,
     STORAGE_LAST_DRIFT_UI,
     STORAGE_OVERLAY_EPISODE,
+    STORAGE_CONTINUE_SNOOZE_UNTIL,
   ]);
   broadcastState(null, []);
   await clearBadge();
@@ -1303,6 +1429,31 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg?.type === "OVERLAY_NUDGE_DONE") {
     sendResponse({ ok: true });
     return false;
+  }
+  if (msg?.type === "OVERLAY_CONTINUE_SNOOZE") {
+    const snoozeUntil = Date.now() + CONTINUE_SNOOZE_MS;
+    void (async () => {
+      try {
+        await chrome.storage.local.set({
+          [STORAGE_CONTINUE_SNOOZE_UNTIL]: snoozeUntil,
+        });
+        const { events } = await loadState();
+        const queueTotalMin = estimateQueueTotalFromEvents(events);
+        const ui = await chrome.storage.local.get(STORAGE_LAST_DRIFT_UI);
+        const p = ui[STORAGE_LAST_DRIFT_UI];
+        const queueDeltaMin =
+          p && typeof p.queueDeltaMin === "number" ? p.queueDeltaMin : 0;
+        sendResponse({
+          ok: true,
+          snoozeUntil,
+          queueDeltaMin,
+          queueTotalMin,
+        });
+      } catch {
+        sendResponse({ ok: false });
+      }
+    })();
+    return true;
   }
   if (msg?.type === "POPUP_STATE") {
     loadState()
@@ -1460,17 +1611,15 @@ chrome.tabs.onCreated.addListener(async (tab) => {
   if (!(await trackingActive())) return;
   if (tab.id == null) return;
 
-  void tryReactiveNudgeOnTabCreated(tab);
-
   const pushCreate = () => {
-    chrome.tabs.get(tab.id, (t) => {
+    chrome.tabs.get(tab.id, async (t) => {
       if (chrome.runtime.lastError || !t) return;
       const url = t.url || t.pendingUrl;
       if (!url || url === "chrome://newtab/" || url.startsWith("chrome://"))
         return;
-      void appendEvents([tabToEvent(t, "TAB_CREATE")]);
+      await appendEvents([tabToEvent(t, "TAB_CREATE")]);
       const h = hostFromUrl(String(url));
-      if (!isIntentGateHost(h)) void fireReactiveNudge(t.id);
+      if (!isIntentGateHost(h)) void fireReactiveNudgeAfterCreate(t);
     });
   };
 
