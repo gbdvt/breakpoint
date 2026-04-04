@@ -174,8 +174,10 @@ export default function QueueHomePage() {
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col">
-      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-3 py-4">
-        <div>
+      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto py-4">
+        <div
+          {...(isTauri() ? { "data-tauri-drag-region": true } : {})}
+        >
           <div className="flex items-start justify-between gap-3">
             <h1 className="text-[21px] font-semibold leading-tight tracking-tight text-white">
               {greetingLabel(firstName)}
@@ -417,14 +419,14 @@ export default function QueueHomePage() {
       </div>
 
       {!live ? (
-        <div className="shrink-0 border-t border-white/[0.06] bg-gradient-to-t from-black/20 to-transparent px-3 py-3 backdrop-blur-sm">
+        <div className="shrink-0 border-t border-white/[0.06] bg-transparent px-4 pb-4 pt-3">
           <button
             type="button"
             disabled={starting || !isTauri()}
             onClick={() => void startSession()}
-            className="w-full rounded-2xl border border-indigo-200/15 bg-gradient-to-r from-indigo-500/[0.38] via-violet-500/[0.28] to-indigo-600/[0.35] py-3.5 text-[14px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_8px_32px_rgba(79,70,229,0.2)] backdrop-blur-sm transition hover:from-indigo-500/[0.45] disabled:opacity-40"
+            className="w-full rounded-full border border-indigo-200/15 bg-gradient-to-r from-indigo-500/[0.38] via-violet-500/[0.28] to-indigo-600/[0.35] py-3.5 text-[14px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_8px_32px_rgba(79,70,229,0.2)] transition hover:from-indigo-500/[0.45] disabled:opacity-40"
           >
-            {starting ? "…" : "Start work session"}
+            {starting ? "…" : "Start Session"}
           </button>
           {startError ? (
             <p className="mt-2 text-center text-[11px] text-rose-300/90">

@@ -22,7 +22,13 @@
         "resizable": true,
         "maximizable": false,
         "decorations": false,
-        "shadow": false,
+        "shadow": true,
+        "transparent": true,
+        "backgroundColor": "#00000000",
+        "windowEffects": {
+          "effects": ["acrylic"],
+          "color": "#0c101ad9"
+        },
         "center": false,
         "x": 16,
         "y": 40,

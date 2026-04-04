@@ -13,7 +13,7 @@ function faviconUrl(domain: string): string {
 
 export default function SessionDomainTrail({ domains }: Props) {
   return (
-    <div className="glass-card p-4">
+    <div className="glass-card p-5">
       <SectionHeader
         title="Sites"
         subtitle="Where you went during this session"

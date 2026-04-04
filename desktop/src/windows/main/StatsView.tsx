@@ -4,6 +4,8 @@ import FocusScoreCard from "@/components/stats/FocusScoreCard";
 import MetricsGrid from "@/components/stats/MetricsGrid";
 import PersonalBestsCard from "@/components/stats/PersonalBestsCard";
 import StatsHeader from "@/components/stats/StatsHeader";
+import NavBackButton from "@/components/ui/NavBackButton";
+import PageTopDragRow from "@/components/ui/PageTopDragRow";
 import { useDesktopData } from "@/context/DesktopDataContext";
 import { buildStatsBundle } from "@/lib/sessionStats";
 
@@ -16,6 +18,9 @@ export default function StatsView() {
 
   return (
     <>
+      <PageTopDragRow>
+        <NavBackButton to="/" aria-label="Back to home" />
+      </PageTopDragRow>
       <StatsHeader />
       <div className="grid gap-5 lg:grid-cols-[1fr_280px]">
         <div className="space-y-5">

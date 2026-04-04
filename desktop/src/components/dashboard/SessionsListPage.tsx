@@ -1,4 +1,6 @@
 import WorkSessionsPanel from "@/components/dashboard/WorkSessionsPanel";
+import NavBackButton from "@/components/ui/NavBackButton";
+import PageTopDragRow from "@/components/ui/PageTopDragRow";
 import { useDesktopData } from "@/context/DesktopDataContext";
 import { useChromeBridgeFeed } from "@/hooks/useChromeBridgeFeed";
 import { distractionCount, sessionIsLive } from "@/lib/liveSessionDetail";
@@ -31,6 +33,9 @@ export default function SessionsListPage() {
 
   return (
     <div className="space-y-3">
+      <PageTopDragRow>
+        <NavBackButton to="/" aria-label="Back to home" />
+      </PageTopDragRow>
       {sessions.length === 0 ? (
         <p className="px-1 py-4 text-center text-[13px] text-white/40">
           No sessions yet. Start a work session from home, then end it to

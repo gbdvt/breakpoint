@@ -24,7 +24,7 @@ type Props = {
 export default function SessionAttentionStrip({ segments }: Props) {
   if (!segments.length) {
     return (
-      <div className="glass-card p-4">
+      <div className="glass-card p-5">
         <SectionHeader title="Attention" subtitle="Over time" />
         <p className="mt-2 text-[12px] text-white/40">
           Not enough timed events to draw this strip yet.
@@ -34,7 +34,7 @@ export default function SessionAttentionStrip({ segments }: Props) {
   }
 
   return (
-    <div className="glass-card p-4">
+    <div className="glass-card p-5">
       <SectionHeader title="Attention" subtitle="Where context sat between events" />
       <div
         className="mt-3 flex h-9 w-full overflow-hidden rounded-xl ring-1 ring-white/[0.1]"

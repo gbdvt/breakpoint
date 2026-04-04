@@ -24,6 +24,38 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+/*
+ * Main Breakpoint window (Windows): rounded clip + transparent pixels.
+ * Real desktop blur is DWM acrylic (tauri.conf → windowEffects), not CSS
+ * backdrop-filter — WebView2 won’t blur OS content behind the webview.
+ */
+html.tauri-shell {
+  color-scheme: dark;
+  background: transparent !important;
+  background-color: transparent !important;
+  border-radius: 22px;
+  overflow: hidden;
+  min-height: 100dvh;
+  height: 100%;
+}
+
+html.tauri-shell body.main-window {
+  background: transparent !important;
+  background-color: transparent !important;
+  border-radius: 22px;
+  overflow: hidden;
+  min-height: 100%;
+  margin: 0;
+}
+
+html.tauri-shell body.main-window #root {
+  min-height: 100%;
+  background: transparent !important;
+  background-color: transparent !important;
+  border-radius: 22px;
+  overflow: hidden;
+}
+
 /* Frameless floating webview: native + WebView2 see-through; only the pill draws pixels */
 html.floating-root {
   color-scheme: dark;
@@ -121,4 +153,30 @@ input {
     0 12px 40px rgba(0, 0, 0, 0.22);
   backdrop-filter: blur(28px) saturate(1.25);
   -webkit-backdrop-filter: blur(28px) saturate(1.25);
+}
+
+/* Tauri: acrylic blurs the desktop under the whole webview; keep this overlay light. */
+html.tauri-shell .glass-card-strong {
+  border-color: rgba(186, 230, 253, 0.13);
+  background: linear-gradient(
+    168deg,
+    rgba(255, 255, 255, 0.07) 0%,
+    rgba(10, 14, 26, 0.22) 48%,
+    rgba(6, 10, 18, 0.32) 100%
+  );
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 20px 56px rgba(0, 0, 0, 0.28);
+}
+
+html.tauri-shell .glass-card {
+  background: linear-gradient(
+    165deg,
+    rgba(255, 255, 255, 0.06) 0%,
+    rgba(255, 255, 255, 0.02) 42%,
+    rgba(12, 18, 32, 0.26) 100%
+  );
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 4px 24px rgba(0, 0, 0, 0.12);
 }

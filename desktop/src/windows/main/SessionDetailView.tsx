@@ -1,5 +1,7 @@
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import SessionAttentionStrip from "@/components/session/SessionAttentionStrip";
+import NavBackButton from "@/components/ui/NavBackButton";
+import PageTopDragRow from "@/components/ui/PageTopDragRow";
 import SessionDetailHeader from "@/components/session/SessionDetailHeader";
 import SessionDetailPanel from "@/components/session/SessionDetailPanel";
 import SessionDomainTrail from "@/components/session/SessionDomainTrail";
@@ -17,9 +19,6 @@ import {
 import { buildLiveSessionDetail, sessionIsLive } from "@/lib/liveSessionDetail";
 import { completedToSessionDetail } from "@/lib/sessionStats";
 
-const navClass =
-  "mb-4 inline-flex text-[12px] font-medium text-white/45 transition hover:text-white/75";
-
 export default function SessionDetailView() {
   const { id } = useParams();
   const feed = useChromeBridgeFeed();
@@ -28,15 +27,18 @@ export default function SessionDetailView() {
   if (id === "live") {
     if (!feed) {
       return (
-        <p className="text-[12px] text-white/45">Loading session…</p>
+        <>
+          <PageTopDragRow />
+          <p className="text-[12px] text-white/45">Loading session…</p>
+        </>
       );
     }
     if (!sessionIsLive(feed.session)) {
       return (
         <>
-          <Link to="/sessions" className={navClass}>
-            ← Sessions
-          </Link>
+          <PageTopDragRow>
+            <NavBackButton to="/sessions" aria-label="Back to sessions" />
+          </PageTopDragRow>
           <p className="text-[13px] text-white/45">No active session.</p>
         </>
       );
@@ -54,9 +56,9 @@ export default function SessionDetailView() {
 
     return (
       <>
-        <Link to="/sessions" className={navClass}>
-          ← Sessions
-        </Link>
+        <PageTopDragRow>
+          <NavBackButton to="/sessions" aria-label="Back to sessions" />
+        </PageTopDragRow>
         <div className="space-y-4">
           <SessionDetailHeader detail={detail} />
           <SessionDriftChart data={liveDriftSeries} />
@@ -82,9 +84,9 @@ export default function SessionDetailView() {
   if (!saved) {
     return (
       <>
-        <Link to="/sessions" className={navClass}>
-          ← Sessions
-        </Link>
+        <PageTopDragRow>
+          <NavBackButton to="/sessions" aria-label="Back to sessions" />
+        </PageTopDragRow>
         <p className="text-[13px] text-white/45">
           Session not found. It may have been recorded on another device or
           cleared from this machine.
@@ -107,9 +109,9 @@ export default function SessionDetailView() {
 
   return (
     <>
-      <Link to="/sessions" className={navClass}>
-        ← Sessions
-      </Link>
+      <PageTopDragRow>
+        <NavBackButton to="/sessions" aria-label="Back to sessions" />
+      </PageTopDragRow>
       <div className="space-y-4">
         <SessionDetailHeader detail={detail} />
         <SessionDriftChart data={driftSeries} />

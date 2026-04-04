@@ -20,11 +20,8 @@ type Props = {
 export default function SessionDriftChart({ data }: Props) {
   if (data.length < 2) {
     return (
-      <div className="glass-card p-4">
+      <div className="glass-card p-5">
         <SectionHeader title="Drift load" subtitle="Over the session" />
-        <p className="mt-2 text-[12px] text-white/40">
-          Log a few tab or navigation events to see how drift built over time.
-        </p>
       </div>
     );
   }
@@ -32,17 +29,13 @@ export default function SessionDriftChart({ data }: Props) {
   const maxScore = Math.max(8, ...data.map((d) => d.score));
 
   return (
-    <div className="glass-card p-4">
-      <SectionHeader title="Drift load" subtitle="Rolling score after each event" />
-      <p className="mt-1 text-[11px] leading-relaxed text-white/38">
-        Step line matches the live nudge engine. Amber dashed line = intervention
-        threshold.
-      </p>
-      <div className="mt-3 h-[220px] w-full min-w-0">
+    <div className="glass-card p-5">
+      <SectionHeader title="Drift load" subtitle="Over the session" />
+      <div className="mt-4 h-[220px] w-full min-w-0">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart
             data={data}
-            margin={{ top: 8, right: 8, left: -18, bottom: 0 }}
+            margin={{ top: 10, right: 10, left: 4, bottom: 4 }}
           >
             <CartesianGrid
               strokeDasharray="3 3"
