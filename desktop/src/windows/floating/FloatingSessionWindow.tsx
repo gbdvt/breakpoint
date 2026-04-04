@@ -4,17 +4,12 @@ import { motion } from "framer-motion";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useChromeBridgeFeed } from "@/hooks/useChromeBridgeFeed";
 import { closeFloatingWindow } from "@/lib/tauriBridge";
-import { distractionCount, sessionIsLive } from "@/lib/liveSessionDetail";
+import { sessionIsLive } from "@/lib/liveSessionDetail";
 
-/**
- * HUD pill — shows latest Chrome / extension activity when a session is live.
- */
+/** Minimal HUD: session timer only — drift feedback stays in the browser overlay. */
 export default function FloatingSessionWindow() {
   const feed = useChromeBridgeFeed();
   const live = feed && sessionIsLive(feed.session);
-  const events = feed?.events ?? [];
-  const last = events.length ? events[events.length - 1] : null;
-  const dCount = distractionCount(events.slice(-12));
 
   const [tick, setTick] = useState(0);
   useEffect(() => {
@@ -32,14 +27,6 @@ export default function FloatingSessionWindow() {
     const ss = elapsedSec % 60;
     return `${mm}:${ss.toString().padStart(2, "0")}`;
   }, [live, session, tick]);
-
-  const domain = last?.domain ?? "—";
-  const line =
-    last?.title && last.title.trim().length
-      ? last.title.trim().slice(0, 80) + (last.title.length > 80 ? "…" : "")
-      : live
-        ? "Watching tab activity from Chrome"
-        : "No session — start one in the web app";
 
   const dismiss = useCallback(async () => {
     try {
@@ -67,43 +54,38 @@ export default function FloatingSessionWindow() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ type: "spring", stiffness: 400, damping: 36 }}
         data-tauri-drag-region
-        className="flex w-full max-w-[min(100%,520px)] cursor-grab items-center gap-3 rounded-full border border-sky-200/25 px-3.5 py-2 active:cursor-grabbing"
+        className="flex w-full max-w-[min(100%,320px)] cursor-grab items-center gap-3 rounded-full border border-white/[0.12] bg-white/[0.08] px-3.5 py-2 active:cursor-grabbing"
         style={{
-          background:
-            "linear-gradient(125deg, rgba(59,130,246,0.5) 0%, rgba(14,165,233,0.38) 42%, rgba(15,23,42,0.62) 100%)",
-          backdropFilter: "blur(32px) saturate(1.7)",
-          WebkitBackdropFilter: "blur(32px) saturate(1.7)",
+          backdropFilter: "blur(28px) saturate(1.2)",
+          WebkitBackdropFilter: "blur(28px) saturate(1.2)",
           boxShadow:
-            "0 0 0 1px rgba(255,255,255,0.14) inset, 0 1px 0 rgba(255,255,255,0.22) inset, 0 12px 40px rgba(37,99,235,0.28), 0 4px 16px rgba(15,23,42,0.35)",
+            "0 0 0 1px rgba(255,255,255,0.06) inset, 0 10px 36px rgba(0,0,0,0.25)",
         }}
       >
-        <span className="shrink-0 text-[14px] font-semibold tabular-nums tracking-tight text-white">
+        <span
+          className="size-2 shrink-0 rounded-full bg-emerald-400/90"
+          aria-hidden
+        />
+        <span className="text-[14px] font-semibold tabular-nums tracking-tight text-white">
           {time}
         </span>
-
-        <span className="no-drag flex size-6 shrink-0 items-center justify-center rounded-full bg-sky-300/95 text-[11px] font-bold text-sky-950 shadow-sm">
-          {dCount > 9 ? "9+" : dCount}
+        <span className="text-[11px] font-medium text-white/45">
+          {live ? "Session" : "Idle"}
         </span>
-
-        <p className="min-w-0 flex-1 text-[11px] leading-snug text-sky-50/95">
-          <span className="font-medium text-white">{domain}</span>
-          <span className="text-white/80"> — {line}</span>
-        </p>
-
-        <div className="no-drag flex shrink-0 items-center gap-1">
+        <div className="no-drag ml-auto flex shrink-0 items-center gap-1">
           <button
             type="button"
             onClick={() => void togglePin()}
-            className="rounded-full bg-white/15 px-2 py-1 text-[9px] font-semibold text-white/90 hover:bg-white/25"
+            className="rounded-full bg-white/[0.08] px-2 py-1 text-[9px] font-semibold text-white/75 hover:bg-white/[0.12]"
           >
-            {onTop ? "On top" : "Float"}
+            {onTop ? "Pin" : "Float"}
           </button>
           <button
             type="button"
             onClick={() => void dismiss()}
-            className="rounded-full border border-white/25 bg-white/10 px-2.5 py-1 text-[10px] font-semibold text-white hover:bg-white/20"
+            className="rounded-full border border-white/[0.1] bg-white/[0.06] px-2.5 py-1 text-[10px] font-semibold text-white/80 hover:bg-white/[0.1]"
           >
-            Dismiss
+            Close
           </button>
         </div>
       </motion.div>

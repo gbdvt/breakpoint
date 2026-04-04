@@ -246,26 +246,25 @@ async function setDriftBadge() {
   }
 }
 
-function buildDriftPayload(session, events) {
+function buildDriftPayload(_session, events) {
   const kind = interventionKind(events);
   const last = events[events.length - 1];
-  const domain = last?.domain || "unknown";
-  const title = last?.title;
-  const goalLine = session?.goal ? String(session.goal).slice(0, 140) : "";
+  const rawDomain =
+    last?.domain && typeof last.domain === "string"
+      ? String(last.domain).replace(/^www\./i, "").trim()
+      : "";
+  const title =
+    last?.title && typeof last.title === "string"
+      ? String(last.title).trim()
+      : "";
 
-  let body =
-    kind === "research"
-      ? "Lots of new sources quickly — still preparing, or time for one small execution step?"
-      : "This looks like a drift pattern away from your stated goal.";
-
-  if (title && title.length > 0) {
-    body += ` This tab: “${title.slice(0, 140)}${title.length > 140 ? "…" : ""}”.`;
-  } else if (domain && domain !== "unknown") {
-    body += ` (${domain})`;
+  let siteLabel = rawDomain;
+  if (!siteLabel && title) {
+    siteLabel = title.length > 42 ? `${title.slice(0, 40)}…` : title;
   }
+  if (!siteLabel) siteLabel = "This tab";
 
-  const headline = kind === "research" ? "Research pile-up" : "Drift signal";
-  return { headline, body, goalLine, kind };
+  return { kind, siteLabel };
 }
 
 /**

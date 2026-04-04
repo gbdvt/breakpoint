@@ -110,7 +110,7 @@ export default function NarrowPanelLayout() {
           </header>
 
           <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
-            <div className="min-h-0 flex-1 overflow-hidden">
+            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pb-3 pt-1">
               <Outlet context={outletContext} />
             </div>
             <PanelSessionDock />

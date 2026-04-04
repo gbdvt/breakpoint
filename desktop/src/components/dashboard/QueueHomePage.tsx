@@ -3,7 +3,6 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Link, useOutletContext } from "react-router-dom";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import LiveSessionActivityPanel from "@/components/session/LiveSessionActivityPanel";
 import { useDesktopData } from "@/context/DesktopDataContext";
 import { useChromeBridgeFeed } from "@/hooks/useChromeBridgeFeed";
 import { useVoiceTranscript } from "@/hooks/useVoiceTranscript";
@@ -204,8 +203,6 @@ export default function QueueHomePage() {
             {tasksLeftLabel} · {formatWorkedToday(workedTodayMin)} worked today
           </p>
         </div>
-
-        {live && feed ? <LiveSessionActivityPanel feed={feed} /> : null}
 
         <div className="glass-card overflow-hidden">
           <button

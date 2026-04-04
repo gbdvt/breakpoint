@@ -4,75 +4,99 @@ const EXT_VERSION =
     ? chrome.runtime.getManifest().version
     : "";
 
+const WARN_SVG = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+  <path d="M12 5.5L4 19h16L12 5.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+  <path d="M12 10v3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+  <circle cx="12" cy="16.5" r="0.75" fill="currentColor"/>
+</svg>`;
+
 function el(html) {
   const t = document.createElement("template");
   t.innerHTML = html.trim();
   return t.content.firstElementChild;
 }
 
-function render(state) {
-  const root = document.getElementById("root");
-  if (!root) return;
+function faviconUrl(domain) {
+  const d = String(domain || "")
+    .replace(/^www\./i, "")
+    .trim();
+  if (!d) return "";
+  return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(d)}&sz=32`;
+}
 
-  if (!state.ok) {
-    root.replaceChildren(
-      el(`<p class="err">${state.error || "Could not load state."}</p>`),
-    );
-    return;
+function displaySite(state) {
+  const d = state.lastDomain;
+  if (d) return d;
+  const t = state.lastTitle;
+  if (t) {
+    const s = String(t);
+    return s.length > 44 ? `${s.slice(0, 44)}…` : s;
   }
-
-  const { session, eventsCount, score, driftBand, lastDomain, lastTitle } =
-    state;
-
-  if (!session || session.endedAt) {
-    root.replaceChildren(
-      el(`<div class="card"><span class="label">No active session</span>
-        <p class="goal">Start one from the dashboard.</p></div>`),
-      el(`<a class="btn" href="${DASHBOARD}" target="_blank" rel="noopener">Open dashboard</a>`),
-      el(`<p class="muted">Drift load uses the last ~10 events (same as the app).</p>`),
-    );
-    return;
-  }
-
-  const statusClass = driftBand ? "drift-on" : "drift-off";
-  const statusText = driftBand ? "Elevated — check tab" : "Below nudge threshold";
-
-  const goal = session.goal
-    ? `<p class="goal"><span class="label">Goal</span><br />${escapeHtml(
-        String(session.goal).slice(0, 200),
-      )}</p>`
-    : "";
-
-  const lastBit =
-    lastTitle || lastDomain
-      ? `<div class="row"><span class="label">Latest</span><span class="value">${escapeHtml(
-          (lastTitle || lastDomain || "").slice(0, 90),
-        )}</span></div>`
-      : "";
-
-  root.replaceChildren(
-    el(`<div class="card">
-      ${goal}
-      <div class="row"><span class="label">Drift load</span><span class="value">${score}</span></div>
-      <div class="row"><span class="label">Status</span><span class="value ${statusClass}">${statusText}</span></div>
-      <div class="row"><span class="label">Events</span><span class="value">${eventsCount}</span></div>
-      ${lastBit}
-    </div>`),
-    el(
-      `<a class="btn" href="${DASHBOARD}" target="_blank" rel="noopener">Open dashboard</a>`,
-    ),
-    el(
-      `<p class="muted">Badge “!” clears when drift load drops. Click here anytime for this readout.</p>`,
-    ),
-  );
+  return "This tab";
 }
 
 function escapeHtml(s) {
-  return s
+  return String(s)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+function render(state) {
+  const root = document.getElementById("root");
+  if (!root) return;
+
+  const dashTitle =
+    EXT_VERSION ? `Open Breakpoint (v${EXT_VERSION})` : "Open Breakpoint";
+  const dashLink = `<a class="subtle" href="${DASHBOARD}" target="_blank" rel="noopener" title="${escapeHtml(dashTitle)}">Open Breakpoint</a>`;
+
+  if (!state.ok) {
+    root.replaceChildren(
+      el(`<p class="err">${escapeHtml(state.error || "Could not load state.")}</p>`),
+      el(dashLink),
+    );
+    return;
+  }
+
+  const { session, driftBand } = state;
+
+  if (!session || session.endedAt) {
+    root.replaceChildren(
+      el(`<div class="pill pill-idle">No active session</div>`),
+      el(dashLink),
+    );
+    return;
+  }
+
+  const site = escapeHtml(displaySite(state));
+  const fav = state.lastDomain ? faviconUrl(state.lastDomain) : "";
+
+  if (driftBand) {
+    const lead =
+      fav !== ""
+        ? `<img class="fav" src="${escapeHtml(fav)}" alt="" width="18" height="18" />`
+        : `<span class="pill-icon" style="color:rgba(120,20,30,0.9)">${WARN_SVG}</span>`;
+    root.replaceChildren(
+      el(`<div class="pill pill--alert">
+        ${lead}
+        <span class="pill-main">${site} — Distraction logged</span>
+      </div>`),
+      el(dashLink),
+    );
+    return;
+  }
+
+  const img = fav
+    ? `<img class="fav" src="${escapeHtml(fav)}" alt="" width="18" height="18" />`
+    : "";
+  root.replaceChildren(
+    el(`<div class="pill">
+      ${img}
+      <span class="pill-main">${site} — Session active</span>
+    </div>`),
+    el(dashLink),
+  );
 }
 
 function load() {
@@ -91,8 +115,5 @@ function load() {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-  const verEl = document.getElementById("ext-version");
-  if (verEl && EXT_VERSION) verEl.textContent = `v${EXT_VERSION}`;
   load();
 });
-

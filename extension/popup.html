@@ -11,104 +11,100 @@
       body {
         width: 300px;
         margin: 0;
-        padding: 12px 14px 14px;
+        padding: 14px 12px 12px;
         font:
-          13px/1.45 system-ui,
+          12px/1.35 system-ui,
           -apple-system,
-          Segoe UI,
+          "Segoe UI",
           Roboto,
           sans-serif;
-        color: #0f172a;
-        background: #fafafa;
+        -webkit-font-smoothing: antialiased;
+        color: rgba(255, 255, 255, 0.88);
+        background: linear-gradient(160deg, #0a0d14 0%, #060810 100%);
       }
-      h1 {
-        margin: 0 0 2px;
-        font-size: 15px;
-        font-weight: 650;
+      #root {
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
       }
-      .sub {
-        margin: 0 0 12px;
-        font-size: 11px;
-        color: #64748b;
+      .pill {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 14px;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(255, 255, 255, 0.06);
+        backdrop-filter: blur(18px);
+        -webkit-backdrop-filter: blur(18px);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.06),
+          0 8px 24px rgba(0, 0, 0, 0.35);
       }
-      .ver {
-        display: block;
-        margin-top: 4px;
-        font-size: 10px;
-        color: #94a3b8;
+      .pill--alert {
+        border-color: rgba(255, 130, 150, 0.35);
+        background: rgba(200, 50, 70, 0.22);
+        color: rgba(60, 12, 18, 0.92);
+      }
+      .pill--alert .pill-main {
+        color: rgba(45, 8, 12, 0.95);
+      }
+      .pill--idle {
+        justify-content: center;
+        color: rgba(255, 255, 255, 0.55);
         font-weight: 500;
         letter-spacing: 0.02em;
       }
-      .card {
-        background: #fff;
-        border: 1px solid #e2e8f0;
-        border-radius: 10px;
-        padding: 10px 12px;
-        margin-bottom: 10px;
-      }
-      .row {
+      .pill-icon {
+        flex-shrink: 0;
         display: flex;
-        justify-content: space-between;
-        align-items: baseline;
-        gap: 8px;
-        margin-bottom: 6px;
+        align-items: center;
+        justify-content: center;
       }
-      .row:last-child {
-        margin-bottom: 0;
+      .pill-icon svg {
+        display: block;
       }
-      .label {
-        font-size: 11px;
-        color: #64748b;
-      }
-      .value {
+      .pill-main {
+        flex: 1;
+        min-width: 0;
         font-weight: 600;
-        font-size: 13px;
-        text-align: right;
+        font-size: 11.5px;
+        letter-spacing: 0.01em;
+        line-height: 1.35;
         word-break: break-word;
       }
-      .drift-on {
-        color: #b45309;
+      .fav {
+        width: 18px;
+        height: 18px;
+        border-radius: 5px;
+        flex-shrink: 0;
+        background: rgba(255, 255, 255, 0.08);
+        object-fit: contain;
       }
-      .drift-off {
-        color: #15803d;
-      }
-      .goal {
-        font-size: 12px;
-        color: #334155;
-        margin-top: 6px;
-        line-height: 1.4;
-      }
-      a.btn {
+      a.subtle {
         display: block;
         text-align: center;
-        padding: 8px 10px;
-        border-radius: 8px;
-        background: #0f172a;
-        color: #fff;
+        font-size: 11px;
+        font-weight: 500;
+        color: rgba(148, 196, 255, 0.55);
         text-decoration: none;
-        font-size: 12px;
-        font-weight: 600;
       }
-      a.btn:hover {
-        filter: brightness(1.08);
+      a.subtle:hover {
+        color: rgba(186, 220, 255, 0.85);
       }
       .err {
-        color: #b91c1c;
-        font-size: 12px;
-      }
-      .muted {
+        padding: 10px 12px;
+        border-radius: 12px;
+        background: rgba(180, 40, 50, 0.15);
+        border: 1px solid rgba(255, 120, 130, 0.2);
+        color: #fecaca;
         font-size: 11px;
-        color: #94a3b8;
-        margin-top: 8px;
+        line-height: 1.4;
       }
     </style>
   </head>
   <body>
-    <h1>Breakpoint</h1>
-    <p class="sub">
-      Session & drift snapshot
-      <span id="ext-version" class="ver"></span>
-    </p>
     <div id="root"></div>
     <script src="popup.js"></script>
   </body>
