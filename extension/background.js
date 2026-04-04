@@ -5,7 +5,7 @@
  * Drift scoring below mirrors breakpoint/lib/driftEngine.ts — keep in sync when tuning.
  * Tab titles are captured on events and refreshed via tabs.onUpdated (YouTube, ChatGPT, etc.).
  * YouTube: youtubeProbe.js reads video.duration; caption transcript → Next API → transcriptBullets on queue events.
- * Drift interventions: bottom-right in-page overlay + toolbar badge; light reactive nudge on new tab (Ctrl+T).
+ * Drift: minimal pills (amber wait / rose slip) + compact drift card; ChatGPT title → relevance check via local Next API.
  */
 
 const STORAGE_SESSION = "breakpoint_active_session";
@@ -67,8 +67,8 @@ let lastDistractorVisit = {};
 /** True if last evaluated drift score was in the intervention band (>= threshold). */
 let prevShouldIntervene = false;
 
-/** Per-tab debounce only (ms) — avoids duplicate inject glitches, not “user spam”. */
-const REACTIVE_NUDGE_TAB_DEBOUNCE_MS = 320;
+/** Per-tab debounce (ms) — keep low so first Ctrl+T always shows. */
+const REACTIVE_NUDGE_TAB_DEBOUNCE_MS = 100;
 /** @type {Map<number, number>} tabId → last nudge time */
 let reactiveNudgeLastByTab = new Map();
 
@@ -76,6 +76,24 @@ let reactiveNudgeLastByTab = new Map();
 const DISTRACTOR_NUDGE_TAB_MS = 2800;
 /** @type {Map<number, number>} */
 let distractorNudgeLastByTab = new Map();
+
+/** ChatGPT / Chat: wait for tab title, then classify vs session.goal. */
+/** @type {Map<number, { baselineTitle: string; goal: string }>} */
+let intentWatchByTabId = new Map();
+/** @type {Map<number, ReturnType<typeof setTimeout>>} */
+let intentClassifyTimers = new Map();
+
+const CLASSIFY_ORIGINS = [
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+  "http://localhost:3001",
+  "http://127.0.0.1:3001",
+];
+
+function isIntentGateHost(host) {
+  const h = normalizeHost(String(host));
+  return h === "chat.openai.com" || h === "chatgpt.com" || h.endsWith(".chatgpt.com");
+}
 
 function normalizeHost(hostname) {
   if (!hostname) return "";
@@ -344,6 +362,9 @@ function resetTrackingGuards() {
   prevShouldIntervene = false;
   reactiveNudgeLastByTab = new Map();
   distractorNudgeLastByTab = new Map();
+  intentWatchByTabId.clear();
+  for (const tid of intentClassifyTimers.values()) clearTimeout(tid);
+  intentClassifyTimers.clear();
 }
 
 /** @param {unknown[]} items */
@@ -433,6 +454,164 @@ async function tabPageIsInjectableHttps(tabId) {
   }
 }
 
+async function pushMinimalOverlay(tabId, payload) {
+  if (tabId == null) return;
+  await chrome.storage.local.set({ [STORAGE_LAST_DRIFT_UI]: payload });
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ["overlay.js"],
+    });
+  } catch (e) {
+    console.warn("[Breakpoint] overlay inject failed", e);
+  }
+}
+
+async function postClassifyRelevance(goal, tabTitle) {
+  const body = JSON.stringify({
+    goal: String(goal).slice(0, 800),
+    tabTitle: String(tabTitle).slice(0, 400),
+  });
+  const ctrl = new AbortController();
+  const kill = setTimeout(() => ctrl.abort(), 22_000);
+  try {
+    for (const origin of CLASSIFY_ORIGINS) {
+      try {
+        const r = await fetch(`${origin}/api/ai/classify-tab-relevance`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body,
+          signal: ctrl.signal,
+        });
+        if (!r.ok) continue;
+        const j = await r.json();
+        if (typeof j.relevant === "boolean") return j.relevant;
+      } catch {
+        /* try next origin */
+      }
+    }
+  } finally {
+    clearTimeout(kill);
+  }
+  return null;
+}
+
+function scheduleIntentClassify(tabId, goal, title) {
+  const prev = intentClassifyTimers.get(tabId);
+  if (prev != null) clearTimeout(prev);
+  const tid = setTimeout(() => {
+    intentClassifyTimers.delete(tabId);
+    void runIntentClassify(tabId, goal, title);
+  }, 520);
+  intentClassifyTimers.set(tabId, tid);
+}
+
+async function runIntentClassify(tabId, goal, title) {
+  if (!(await trackingActive())) return;
+  const rel = await postClassifyRelevance(goal, title);
+  const now = Date.now();
+  if (rel === true) {
+    await pushMinimalOverlay(tabId, {
+      variant: "minimal",
+      tone: "green",
+      primary: "On track",
+      secondary: "",
+      dismissAt: now + 1600,
+    });
+    return;
+  }
+  if (rel === false) {
+    await pushMinimalOverlay(tabId, {
+      variant: "minimal",
+      tone: "red",
+      primary: "Off focus",
+      secondary: "",
+      dismissAt: now + 7000,
+    });
+    return;
+  }
+  await pushMinimalOverlay(tabId, {
+    variant: "minimal",
+    tone: "rose",
+    primary: "No check",
+    secondary: "Run Next.js for AI",
+    dismissAt: now + 3500,
+  });
+}
+
+async function beginIntentWatch(tabId) {
+  if (tabId == null) return;
+  const { session } = await loadState();
+  if (!session?.id || session.endedAt) return;
+  const goal = String(session.goal ?? "").trim();
+  if (!goal) return;
+
+  let tab;
+  try {
+    tab = await chrome.tabs.get(tabId);
+  } catch {
+    return;
+  }
+  const url = tab.url || tab.pendingUrl || "";
+  if (!isIntentGateHost(hostFromUrl(url))) return;
+
+  const baselineTitle = (tab.title || "").trim();
+  if (baselineTitle.length >= 14) {
+    scheduleIntentClassify(tabId, goal.slice(0, 500), baselineTitle);
+    return;
+  }
+
+  intentWatchByTabId.set(tabId, {
+    baselineTitle: baselineTitle || "Chat",
+    goal: goal.slice(0, 500),
+  });
+
+  const now = Date.now();
+  await pushMinimalOverlay(tabId, {
+    variant: "minimal",
+    tone: "amber",
+    primary: "…",
+    secondary: "Waiting on tab title",
+    dismissAt: now + 120_000,
+  });
+}
+
+async function onIntentGateTabUpdated(tabId, changeInfo, tab) {
+  if (!(await trackingActive())) return;
+  const url = tab.url || tab.pendingUrl || "";
+  const host = hostFromUrl(url);
+
+  if (changeInfo.url) {
+    if (!isIntentGateHost(host)) {
+      intentWatchByTabId.delete(tabId);
+      const t = intentClassifyTimers.get(tabId);
+      if (t != null) clearTimeout(t);
+      intentClassifyTimers.delete(tabId);
+      return;
+    }
+    const w = intentWatchByTabId.get(tabId);
+    if (w) {
+      w.baselineTitle = (tab.title || "").trim() || w.baselineTitle;
+      intentWatchByTabId.set(tabId, w);
+    }
+    return;
+  }
+
+  const w = intentWatchByTabId.get(tabId);
+  if (!w) return;
+  if (!isIntentGateHost(host)) {
+    intentWatchByTabId.delete(tabId);
+    return;
+  }
+  if (!changeInfo.title) return;
+  const title = (tab.title || "").trim();
+  if (!title || title === w.baselineTitle) return;
+  if (title.length < 10) return;
+
+  intentWatchByTabId.delete(tabId);
+  scheduleIntentClassify(tabId, w.goal, title);
+}
+
 function shouldFireReactiveNudgeOnTab(tabId, now) {
   const prev = reactiveNudgeLastByTab.get(tabId) ?? 0;
   if (now - prev < REACTIVE_NUDGE_TAB_DEBOUNCE_MS) return false;
@@ -447,35 +626,23 @@ function shouldFireReactiveNudgeOnTab(tabId, now) {
 }
 
 /**
- * Reactive drift nudge: no session-long cooldown; fires ASAP on new tab.
- * Skipped only when full drift band is active (heavy overlay already).
+ * Ambiguous moment (e.g. new tab): amber “Waiting” — always shown when injectable.
  */
 async function fireReactiveNudge(tabId) {
   const now = Date.now();
   if (!shouldFireReactiveNudgeOnTab(tabId, now)) return;
   if (!(await tabPageIsInjectableHttps(tabId))) return;
 
-  const { session, events } = await loadState();
+  const { session } = await loadState();
   if (!session?.id || session.endedAt) return;
-  if (shouldIntervene(computeDriftIndex(events))) return;
 
-  const payload = {
-    variant: "reactive_nudge",
-    line1: "New tab",
-    line2: "Drift moves fast — one beat before you click.",
-    dismissAt: now + 2400,
-    anchorAt: now,
-  };
-  await chrome.storage.local.set({ [STORAGE_LAST_DRIFT_UI]: payload });
-
-  try {
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      files: ["overlay.js"],
-    });
-  } catch (e) {
-    console.warn("[Breakpoint] reactive nudge inject failed", e);
-  }
+  await pushMinimalOverlay(tabId, {
+    variant: "minimal",
+    tone: "amber",
+    primary: "Waiting",
+    secondary: "",
+    dismissAt: now + 4000,
+  });
 }
 
 /**
@@ -524,40 +691,23 @@ function shouldFireDistractorNudgeOnTab(tabId, now) {
 }
 
 /**
- * In-page heads-up when you land on a listed distractor (even if drift score < threshold).
- * Skipped when full drift intervention is active (heavy overlay already).
+ * Listed high-drift host: minimal rose pill (no domain names).
  */
-async function fireDistractorSiteNudge(tabId, hostLabel) {
+async function fireDistractorSiteNudge(tabId) {
   const now = Date.now();
   if (!shouldFireDistractorNudgeOnTab(tabId, now)) return;
   if (!(await tabPageIsInjectableHttps(tabId))) return;
 
-  const { session, events } = await loadState();
+  const { session } = await loadState();
   if (!session?.id || session.endedAt) return;
-  if (shouldIntervene(computeDriftIndex(events))) return;
 
-  const label =
-    hostLabel && String(hostLabel).trim()
-      ? String(hostLabel).replace(/^www\./i, "").trim().slice(0, 48)
-      : "This site";
-
-  const payload = {
-    variant: "distractor_nudge",
-    line1: label,
-    line2: "High-drift destination — still on purpose?",
-    dismissAt: now + 2800,
-    anchorAt: now,
-  };
-  await chrome.storage.local.set({ [STORAGE_LAST_DRIFT_UI]: payload });
-
-  try {
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      files: ["overlay.js"],
-    });
-  } catch (e) {
-    console.warn("[Breakpoint] distractor nudge inject failed", e);
-  }
+  await pushMinimalOverlay(tabId, {
+    variant: "minimal",
+    tone: "rose",
+    primary: "Heads up",
+    secondary: "",
+    dismissAt: now + 3800,
+  });
 }
 
 /**
@@ -573,10 +723,10 @@ async function maybeDistractorArrivalNudges(events, newItems) {
     if (!e || typeof e !== "object" || e.tabId == null) continue;
     const dh = eventDistractorHostFromEvent(e);
     if (!dh) continue;
-    if (!byTab.has(e.tabId)) byTab.set(e.tabId, dh);
+    if (!byTab.has(e.tabId)) byTab.set(e.tabId, true);
   }
-  for (const [tabId, hostLabel] of byTab) {
-    await fireDistractorSiteNudge(tabId, hostLabel);
+  for (const tabId of byTab.keys()) {
+    await fireDistractorSiteNudge(tabId);
   }
 }
 
@@ -1013,6 +1163,13 @@ async function appendEvents(newItems) {
       void summarizeYoutubeQueueItem(e.tabId);
     });
   }
+
+  for (const e of newItems) {
+    const u = e.url ? String(e.url) : "";
+    if (e.tabId != null && u && isIntentGateHost(hostFromUrl(u))) {
+      void beginIntentWatch(e.tabId);
+    }
+  }
 }
 
 /**
@@ -1207,10 +1364,12 @@ chrome.runtime.onMessageExternal.addListener((request, _sender, sendResponse) =>
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   void (async () => {
     if (!(await trackingActive())) return;
-    if (!changeInfo.title && !changeInfo.url) return;
+    if (!changeInfo.title && !changeInfo.url && changeInfo.status !== "complete")
+      return;
     chrome.tabs.get(tabId, (t) => {
       if (chrome.runtime.lastError || !t) return;
       void patchLatestEventForTab(tabId, t);
+      void onIntentGateTabUpdated(tabId, changeInfo, t);
     });
   })();
 });
@@ -1310,7 +1469,8 @@ chrome.tabs.onCreated.addListener(async (tab) => {
       if (!url || url === "chrome://newtab/" || url.startsWith("chrome://"))
         return;
       void appendEvents([tabToEvent(t, "TAB_CREATE")]);
-      void fireReactiveNudge(t.id);
+      const h = hostFromUrl(String(url));
+      if (!isIntentGateHost(h)) void fireReactiveNudge(t.id);
     });
   };
 
