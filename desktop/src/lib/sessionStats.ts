@@ -87,6 +87,7 @@ export function completedToSessionDetail(s: CompletedSessionRecord): SessionDeta
     dateLabel,
     durationMin: s.durationMin,
     tasksCompleted: s.tasksCompleted,
+    completedTaskTitles: s.completedTaskTitles,
     distractions: s.distractions,
     milestones: [],
     queueCostMin: 0,
@@ -265,10 +266,14 @@ function buildPersonalBests(
 
 export function buildCompletedRecordFromFeed(
   feed: ParsedChromeFeed,
-  tasksCompleted: number,
+  completedTaskTitles: string[],
 ): CompletedSessionRecord | null {
   const s = feed.session;
   if (!s?.endedAt) return null;
+  const titles = completedTaskTitles
+    .map((t) => String(t).trim().slice(0, 280))
+    .filter(Boolean)
+    .slice(0, 40);
   return {
     id: s.id,
     goal: s.goal,
@@ -280,7 +285,8 @@ export function buildCompletedRecordFromFeed(
       Math.round((s.endedAt - s.startedAt) / 60_000),
     ),
     distractions: distractionCount(feed.events),
-    tasksCompleted,
+    tasksCompleted: titles.length,
+    completedTaskTitles: titles.length > 0 ? titles : undefined,
     events: feed.events,
   };
 }

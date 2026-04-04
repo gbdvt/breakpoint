@@ -50,16 +50,11 @@ export default function TaskItem({ task, queue, active }: Props) {
         >
           {task.title}
         </p>
-        <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-white/38">
-          {task.project ? (
-            <span className="rounded-md bg-white/[0.05] px-1.5 py-0.5">
-              {task.project}
-            </span>
-          ) : null}
-          {task.estimateMin != null ? (
+        {task.estimateMin != null ? (
+          <div className="mt-1 text-[10px] text-white/38">
             <span className="font-mono tabular-nums">~{task.estimateMin}m</span>
-          ) : null}
-        </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );

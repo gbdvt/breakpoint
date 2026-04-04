@@ -4,7 +4,6 @@ export type Task = {
   id: string;
   title: string;
   done: boolean;
-  project?: string;
   estimateMin?: number;
   /** Transient UI while waiting for an estimate (not required to persist). */
   estimating?: boolean;
@@ -17,13 +16,6 @@ export type WorkSessionListItem = {
   durationMin: number;
   distractions: number;
   focusScore: number;
-};
-
-export type Project = {
-  id: string;
-  name: string;
-  taskCount: number;
-  sessionsThisWeek: number;
 };
 
 export type CircleUser = {
@@ -55,6 +47,8 @@ export type SessionDetail = {
   dateLabel: string;
   durationMin: number;
   tasksCompleted: number;
+  /** Task titles checked off before this session ended (if captured). */
+  completedTaskTitles?: string[];
   distractions: number;
   milestones: string[];
   queueCostMin: number;

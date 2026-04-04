@@ -1,4 +1,3 @@
-import GlassPanel from "@/components/ui/GlassPanel";
 import StatCard from "@/components/ui/StatCard";
 
 type Props = {

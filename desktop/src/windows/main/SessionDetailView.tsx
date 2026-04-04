@@ -124,6 +124,18 @@ export default function SessionDetailView() {
           distractions={detail.distractions}
           queueCostMin={detail.queueCostMin}
         />
+        {saved.completedTaskTitles && saved.completedTaskTitles.length > 0 ? (
+          <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
+            <p className="text-[10px] font-medium uppercase tracking-wide text-white/35">
+              Checked off this session
+            </p>
+            <ul className="mt-2.5 space-y-2 text-[13px] leading-snug text-white/72">
+              {saved.completedTaskTitles.map((title, i) => (
+                <li key={`${i}-${title.slice(0, 24)}`}>{title}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
         <SessionTimeline events={detail.timeline} />
       </div>
     </>

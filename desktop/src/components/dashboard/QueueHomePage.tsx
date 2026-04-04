@@ -33,7 +33,7 @@ function EstimateProgressBar() {
     return () => clearInterval(id);
   }, []);
   return (
-    <div className="mt-2.5 h-1 overflow-hidden rounded-full bg-white/[0.07]">
+    <div className="h-1 overflow-hidden rounded-full bg-white/[0.07]">
       <div
         className="h-full rounded-full bg-gradient-to-r from-sky-400/85 to-indigo-400/75"
         style={{
@@ -153,7 +153,6 @@ export default function QueueHomePage() {
         title,
         done: false,
         estimating: true,
-        project: "No project",
       },
     ]);
 
@@ -255,7 +254,7 @@ export default function QueueHomePage() {
           </button>
           {tasksOpen ? (
             <div className="border-t border-white/[0.06] px-3 pb-3 pt-2">
-              <ul className="mb-3 space-y-2">
+              <ul className="mb-3 space-y-3">
                 <AnimatePresence initial={false}>
                   {tasks.map((t) => (
                     <motion.li
@@ -264,7 +263,7 @@ export default function QueueHomePage() {
                       initial={{ opacity: 0, y: 6 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0 }}
-                      className="rounded-xl border border-white/[0.06] bg-white/[0.025] px-3 py-2.5"
+                      className="rounded-xl border border-white/[0.06] bg-white/[0.025] px-3 py-3.5"
                     >
                       <div className="flex items-start gap-3">
                         <button
@@ -294,12 +293,11 @@ export default function QueueHomePage() {
                               </span>
                             ) : null}
                           </div>
-                          <div className="mt-2 flex flex-wrap gap-1.5">
-                            <span className="rounded-md bg-sky-400/12 px-2 py-0.5 text-[10px] font-medium text-sky-100/80">
-                              {t.project ?? "No project"}
-                            </span>
-                          </div>
-                          {t.estimating ? <EstimateProgressBar /> : null}
+                          {t.estimating ? (
+                            <div className="mt-3">
+                              <EstimateProgressBar />
+                            </div>
+                          ) : null}
                         </div>
                       </div>
                     </motion.li>

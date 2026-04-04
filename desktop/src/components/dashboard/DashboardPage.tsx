@@ -1,5 +1,4 @@
 import GreetingHeader from "@/components/dashboard/GreetingHeader";
-import ProjectsPanel from "@/components/dashboard/ProjectsPanel";
 import StartSessionButton from "@/components/dashboard/StartSessionButton";
 import TasksPanel from "@/components/dashboard/TasksPanel";
 import WorkSessionsPanel from "@/components/dashboard/WorkSessionsPanel";
@@ -25,7 +24,6 @@ export default function DashboardPage() {
       <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
         <div className="space-y-5">
           <TasksPanel tasks={tasks} />
-          <ProjectsPanel projects={[]} />
           <StartSessionButton />
         </div>
 

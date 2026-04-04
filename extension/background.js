@@ -4,7 +4,7 @@
  *
  * Drift scoring below mirrors breakpoint/lib/driftEngine.ts — keep in sync when tuning.
  * Tab titles are captured on events and refreshed via tabs.onUpdated (YouTube, ChatGPT, etc.).
- * Drift interventions: in-page overlay + toolbar badge (no separate OS/Chrome popup window).
+ * Drift interventions: bottom-right in-page overlay + toolbar badge; light reactive nudge on new tab (Ctrl+T).
  */
 
 const STORAGE_SESSION = "breakpoint_active_session";
@@ -22,6 +22,7 @@ const TAB_CREATE_GENERIC_MIN = 2;
 
 const DISTRACTOR_ROOTS = [
   "youtube.com",
+  "youtu.be",
   "linkedin.com",
   "reddit.com",
   "instagram.com",
@@ -63,6 +64,16 @@ let lastDistractorVisit = {};
 /** True if last evaluated drift score was in the intervention band (>= threshold). */
 let prevShouldIntervene = false;
 
+/** Per-tab debounce only (ms) — avoids duplicate inject glitches, not “user spam”. */
+const REACTIVE_NUDGE_TAB_DEBOUNCE_MS = 320;
+/** @type {Map<number, number>} tabId → last nudge time */
+let reactiveNudgeLastByTab = new Map();
+
+/** Per-tab throttle for “you landed on a distractor” nudges (SPA can fire often). */
+const DISTRACTOR_NUDGE_TAB_MS = 2800;
+/** @type {Map<number, number>} */
+let distractorNudgeLastByTab = new Map();
+
 function normalizeHost(hostname) {
   if (!hostname) return "";
   return String(hostname).replace(/^www\./i, "").toLowerCase();
@@ -77,6 +88,21 @@ function hostFromUrl(url) {
   } catch {
     return "";
   }
+}
+
+/** URLs where we still log TAB_SWITCH but skip http(s) domain extraction. */
+function isBrowserShellUrl(url) {
+  if (!url) return true;
+  const u = String(url);
+  return (
+    u.startsWith("chrome://") ||
+    u.startsWith("edge://") ||
+    u.startsWith("brave://") ||
+    u.startsWith("about:") ||
+    u.startsWith("devtools://") ||
+    u.startsWith("chrome-extension://") ||
+    u.startsWith("view-source:")
+  );
 }
 
 function isDistractorHost(host) {
@@ -253,6 +279,8 @@ function resetTrackingGuards() {
   lastDistractorTabId = null;
   lastDistractorVisit = {};
   prevShouldIntervene = false;
+  reactiveNudgeLastByTab = new Map();
+  distractorNudgeLastByTab = new Map();
 }
 
 /** @param {unknown[]} items */
@@ -332,6 +360,163 @@ function buildDriftPayload(_session, events, newItems) {
   return { kind, siteLabel, queueDeltaMin, queueTotalMin };
 }
 
+async function tabPageIsInjectableHttps(tabId) {
+  try {
+    const t = await chrome.tabs.get(tabId);
+    const u = t?.url || t?.pendingUrl || "";
+    return /^https?:\/\//i.test(u);
+  } catch {
+    return false;
+  }
+}
+
+function shouldFireReactiveNudgeOnTab(tabId, now) {
+  const prev = reactiveNudgeLastByTab.get(tabId) ?? 0;
+  if (now - prev < REACTIVE_NUDGE_TAB_DEBOUNCE_MS) return false;
+  reactiveNudgeLastByTab.set(tabId, now);
+  if (reactiveNudgeLastByTab.size > 48) {
+    const cutoff = now - 120_000;
+    for (const [id, t] of reactiveNudgeLastByTab) {
+      if (t < cutoff) reactiveNudgeLastByTab.delete(id);
+    }
+  }
+  return true;
+}
+
+/**
+ * Reactive drift nudge: no session-long cooldown; fires ASAP on new tab.
+ * Skipped only when full drift band is active (heavy overlay already).
+ */
+async function fireReactiveNudge(tabId) {
+  const now = Date.now();
+  if (!shouldFireReactiveNudgeOnTab(tabId, now)) return;
+  if (!(await tabPageIsInjectableHttps(tabId))) return;
+
+  const { session, events } = await loadState();
+  if (!session?.id || session.endedAt) return;
+  if (shouldIntervene(computeDriftIndex(events))) return;
+
+  const payload = {
+    variant: "reactive_nudge",
+    line1: "New tab",
+    line2: "Drift moves fast — one beat before you click.",
+    dismissAt: now + 2400,
+    anchorAt: now,
+  };
+  await chrome.storage.local.set({ [STORAGE_LAST_DRIFT_UI]: payload });
+
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ["overlay.js"],
+    });
+  } catch (e) {
+    console.warn("[Breakpoint] reactive nudge inject failed", e);
+  }
+}
+
+/**
+ * On tabs.onCreated: inject immediately into first injectable tab (opener → last focus → new tab).
+ * New tabs are often chrome:// until they load; opener is usually still https.
+ */
+async function tryReactiveNudgeOnTabCreated(tab) {
+  if (tab.id == null) return;
+
+  if (
+    tab.openerTabId != null &&
+    (await tabPageIsInjectableHttps(tab.openerTabId))
+  ) {
+    await fireReactiveNudge(tab.openerTabId);
+    return;
+  }
+  if (
+    lastActiveTabId != null &&
+    (await tabPageIsInjectableHttps(lastActiveTabId))
+  ) {
+    await fireReactiveNudge(lastActiveTabId);
+    return;
+  }
+  await fireReactiveNudge(tab.id);
+}
+
+/** Domain/host label for distractor check (event.domain or parsed from url). */
+function eventDistractorHostFromEvent(e) {
+  if (!e || typeof e !== "object") return "";
+  let d = e.domain ? normalizeHost(String(e.domain)) : "";
+  if (!d && e.url) d = hostFromUrl(String(e.url));
+  return isDistractorHost(d) ? d : "";
+}
+
+function shouldFireDistractorNudgeOnTab(tabId, now) {
+  const prev = distractorNudgeLastByTab.get(tabId) ?? 0;
+  if (now - prev < DISTRACTOR_NUDGE_TAB_MS) return false;
+  distractorNudgeLastByTab.set(tabId, now);
+  if (distractorNudgeLastByTab.size > 48) {
+    const cutoff = now - 120_000;
+    for (const [id, t] of distractorNudgeLastByTab) {
+      if (t < cutoff) distractorNudgeLastByTab.delete(id);
+    }
+  }
+  return true;
+}
+
+/**
+ * In-page heads-up when you land on a listed distractor (even if drift score < threshold).
+ * Skipped when full drift intervention is active (heavy overlay already).
+ */
+async function fireDistractorSiteNudge(tabId, hostLabel) {
+  const now = Date.now();
+  if (!shouldFireDistractorNudgeOnTab(tabId, now)) return;
+  if (!(await tabPageIsInjectableHttps(tabId))) return;
+
+  const { session, events } = await loadState();
+  if (!session?.id || session.endedAt) return;
+  if (shouldIntervene(computeDriftIndex(events))) return;
+
+  const label =
+    hostLabel && String(hostLabel).trim()
+      ? String(hostLabel).replace(/^www\./i, "").trim().slice(0, 48)
+      : "This site";
+
+  const payload = {
+    variant: "distractor_nudge",
+    line1: label,
+    line2: "High-drift destination — still on purpose?",
+    dismissAt: now + 2800,
+    anchorAt: now,
+  };
+  await chrome.storage.local.set({ [STORAGE_LAST_DRIFT_UI]: payload });
+
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ["overlay.js"],
+    });
+  } catch (e) {
+    console.warn("[Breakpoint] distractor nudge inject failed", e);
+  }
+}
+
+/**
+ * After events are merged: nudge once per tab per batch for distractor arrivals.
+ * Runs after syncDriftIntervention so we never overwrite the full drift overlay payload.
+ */
+async function maybeDistractorArrivalNudges(events, newItems) {
+  if (!Array.isArray(newItems) || newItems.length === 0) return;
+  if (shouldIntervene(computeDriftIndex(events))) return;
+
+  const byTab = new Map();
+  for (const e of newItems) {
+    if (!e || typeof e !== "object" || e.tabId == null) continue;
+    const dh = eventDistractorHostFromEvent(e);
+    if (!dh) continue;
+    if (!byTab.has(e.tabId)) byTab.set(e.tabId, dh);
+  }
+  for (const [tabId, hostLabel] of byTab) {
+    await fireDistractorSiteNudge(tabId, hostLabel);
+  }
+}
+
 /**
  * Prefer: focused tab if it’s a distractor → last known distractor tab (e.g. YouTube) → trigger tab → any focused http(s) tab.
  * Fixes injecting into localhost when the score crosses on “switch back to dashboard”.
@@ -373,10 +558,8 @@ async function chooseOverlayTabId(triggerTabId) {
 }
 
 /**
- * Persist payload and inject the bottom-right in-page card into the best tab
+ * Persist payload and inject the in-page card (bottom-right) into the best tab
  * (focused distractor, else last distractor tab, else trigger/active).
- */
-/**
  * @param {{ crossed?: boolean, newItems?: unknown[] }} [opts]
  */
 async function showDriftIntervention(session, events, triggerTabId, opts) {
@@ -408,6 +591,7 @@ async function showDriftIntervention(session, events, triggerTabId, opts) {
   });
 
   const payload = buildDriftPayload(session, events, newItems);
+  payload.variant = "drift";
   payload.anchorAt = anchorAt;
   payload.settleEndAt = settleEndAt;
   await chrome.storage.local.set({ [STORAGE_LAST_DRIFT_UI]: payload });
@@ -467,6 +651,7 @@ async function appendEvents(newItems) {
   await saveState(undefined, next);
   broadcastState(session, next);
   await syncDriftIntervention(next, session, triggerTabId, newItems);
+  await maybeDistractorArrivalNudges(next, newItems);
 }
 
 /**
@@ -559,6 +744,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     sendResponse({ ok: true });
     return false;
   }
+  if (msg?.type === "OVERLAY_NUDGE_DONE") {
+    sendResponse({ ok: true });
+    return false;
+  }
   if (msg?.type === "POPUP_STATE") {
     loadState()
       .then(({ session: s, events: ev }) => {
@@ -642,8 +831,20 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
 
   chrome.tabs.get(tabId, (tab) => {
     if (chrome.runtime.lastError || !tab) return;
-    const url = tab.url || tab.pendingUrl;
-    if (!url || url.startsWith("chrome://") || url.startsWith("edge://")) return;
+    const url = tab.url || tab.pendingUrl || "";
+
+    if (isBrowserShellUrl(url)) {
+      void appendEvents([
+        {
+          timestamp: Date.now(),
+          type: "TAB_SWITCH",
+          tabId: tab.id,
+          title: tab.title || undefined,
+          url: url || undefined,
+        },
+      ]);
+      return;
+    }
 
     const domain = hostFromUrl(url);
 
@@ -657,7 +858,7 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
       events.push(tabToEvent(tab, "TAB_SWITCH"));
 
       const prevUrl = prev?.url || prev?.pendingUrl || "";
-      const prevHost = prevUrl ? hostFromUrl(prevUrl) : "";
+      const prevHost = prevUrl && !isBrowserShellUrl(prevUrl) ? hostFromUrl(prevUrl) : "";
 
       if (isDistractorHost(domain) && !isDistractorHost(prevHost)) {
         events.push({
@@ -695,6 +896,8 @@ chrome.tabs.onCreated.addListener(async (tab) => {
   if (!(await trackingActive())) return;
   if (tab.id == null) return;
 
+  void tryReactiveNudgeOnTabCreated(tab);
+
   const pushCreate = () => {
     chrome.tabs.get(tab.id, (t) => {
       if (chrome.runtime.lastError || !t) return;
@@ -702,6 +905,7 @@ chrome.tabs.onCreated.addListener(async (tab) => {
       if (!url || url === "chrome://newtab/" || url.startsWith("chrome://"))
         return;
       void appendEvents([tabToEvent(t, "TAB_CREATE")]);
+      void fireReactiveNudge(t.id);
     });
   };
 
@@ -750,6 +954,29 @@ function pollDesktopCommandQueue() {
 
 setInterval(pollDesktopCommandQueue, 1200);
 
+function appendMainFrameNavigation(tabId, url) {
+  if (
+    !url ||
+    url.startsWith("chrome://") ||
+    url.startsWith("edge://") ||
+    url.startsWith("brave://")
+  )
+    return;
+  chrome.tabs.get(tabId, (tab) => {
+    if (chrome.runtime.lastError || !tab) return;
+    void appendEvents([
+      {
+        timestamp: Date.now(),
+        type: "NAVIGATION",
+        domain: hostFromUrl(url) || undefined,
+        title: tab.title || undefined,
+        url,
+        tabId,
+      },
+    ]);
+  });
+}
+
 chrome.webNavigation.onCommitted.addListener(async (details) => {
   if (!(await trackingActive())) return;
   if (details.frameId !== 0) return;
@@ -760,19 +987,12 @@ chrome.webNavigation.onCommitted.addListener(async (details) => {
     return;
 
   const url = details.url || "";
-  if (!url || url.startsWith("chrome://") || url.startsWith("edge://")) return;
+  appendMainFrameNavigation(details.tabId, url);
+});
 
-  chrome.tabs.get(details.tabId, (tab) => {
-    if (chrome.runtime.lastError || !tab) return;
-    void appendEvents([
-      {
-        timestamp: Date.now(),
-        type: "NAVIGATION",
-        domain: hostFromUrl(url) || undefined,
-        title: tab.title || undefined,
-        url,
-        tabId: details.tabId,
-      },
-    ]);
-  });
+chrome.webNavigation.onHistoryStateUpdated.addListener(async (details) => {
+  if (!(await trackingActive())) return;
+  if (details.frameId !== 0) return;
+  const url = details.url || "";
+  appendMainFrameNavigation(details.tabId, url);
 });

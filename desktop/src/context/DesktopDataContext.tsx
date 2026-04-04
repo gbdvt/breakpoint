@@ -45,14 +45,18 @@ export function DesktopDataProvider({ children }: { children: React.ReactNode })
       if (d.completedSessions.some((s) => s.id === rec.id)) return d;
       return {
         ...d,
+        tasks: d.tasks.filter((t) => !t.done),
         completedSessions: [rec, ...d.completedSessions].slice(0, 250),
       };
     });
   }, []);
 
   useSessionCompletionWatcher(feed, (snap) => {
-    const tasksDone = tasksRef.current.filter((t) => t.done).length;
-    const rec = buildCompletedRecordFromFeed(snap, tasksDone);
+    const doneTitles = tasksRef.current
+      .filter((t) => t.done)
+      .map((t) => t.title.trim())
+      .filter(Boolean);
+    const rec = buildCompletedRecordFromFeed(snap, doneTitles);
     if (rec) appendCompleted(rec);
   });
 

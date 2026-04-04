@@ -3,6 +3,7 @@ import type { BreakpointEvent } from "@/types/event";
 /** Hostnames only; subdomains allowed (e.g. m.youtube.com). */
 const DISTRACTOR_ROOTS = [
   "youtube.com",
+  "youtu.be",
   "linkedin.com",
   "reddit.com",
   "instagram.com",
