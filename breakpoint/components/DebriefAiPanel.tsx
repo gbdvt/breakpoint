@@ -64,7 +64,7 @@ export default function DebriefAiPanel({ session, events }: Props) {
         AI read (optional)
       </p>
       <p className="mb-3 text-sm text-neutral-600">
-        One short pass over your event digest — uses your OpenAI key on the
+        One short pass over your event digest — uses your Anthropic key on the
         server. Run only when you want it.
       </p>
       <button

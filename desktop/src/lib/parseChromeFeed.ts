@@ -41,6 +41,32 @@ function parseEvent(raw: unknown): ChromeBreakpointEvent | null {
   if (typeof o.timestamp !== "number" || typeof o.type !== "string")
     return null;
   if (!EVENT_TYPES.has(o.type)) return null;
+  const videoDurationSec =
+    typeof o.videoDurationSec === "number" &&
+    Number.isFinite(o.videoDurationSec)
+      ? o.videoDurationSec
+      : undefined;
+  let transcriptBullets: string[] | undefined;
+  if (Array.isArray(o.transcriptBullets)) {
+    transcriptBullets = o.transcriptBullets
+      .map((x) => String(x ?? "").trim())
+      .filter(Boolean)
+      .slice(0, 8);
+    if (transcriptBullets.length === 0) transcriptBullets = undefined;
+  }
+  const ts = o.transcriptStatus;
+  const transcriptStatus =
+    ts === "pending" ||
+    ts === "loading" ||
+    ts === "ready" ||
+    ts === "unavailable" ||
+    ts === "error"
+      ? ts
+      : undefined;
+  const transcriptError =
+    typeof o.transcriptError === "string"
+      ? o.transcriptError.slice(0, 400)
+      : undefined;
   return {
     timestamp: o.timestamp,
     type: o.type as ChromeEventType,
@@ -48,6 +74,10 @@ function parseEvent(raw: unknown): ChromeBreakpointEvent | null {
     title: typeof o.title === "string" ? o.title : undefined,
     url: typeof o.url === "string" ? o.url : undefined,
     tabId: typeof o.tabId === "number" ? o.tabId : undefined,
+    videoDurationSec,
+    transcriptBullets,
+    transcriptStatus,
+    transcriptError,
   };
 }
 

@@ -197,7 +197,7 @@ export default function StartSession() {
           Uses your task text, mode, planned block, and local rolling stats from
           past sessions (length, peak drift, planned time). Re-run if you edit the
           task. Set{" "}
-          <code className="rounded bg-white/80 px-1">OPENAI_API_KEY</code> in{" "}
+          <code className="rounded bg-white/80 px-1">ANTHROPIC_API_KEY</code> in{" "}
           <code className="rounded bg-white/80 px-1">.env.local</code>.
         </p>
         <div className="flex flex-wrap gap-2">

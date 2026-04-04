@@ -25,6 +25,10 @@ export type ChromeBreakpointEvent = {
   title?: string;
   url?: string;
   tabId?: number;
+  videoDurationSec?: number;
+  transcriptBullets?: string[];
+  transcriptStatus?: "pending" | "loading" | "ready" | "unavailable" | "error";
+  transcriptError?: string;
 };
 
 export type ChromeBridgeSnapshotRaw = {

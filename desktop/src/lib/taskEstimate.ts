@@ -1,5 +1,5 @@
 /**
- * Calls the Next.js `/api/ai/estimate-task` route (uses OPENAI_API_KEY from the Next app's `.env.local`).
+ * Calls the Next.js `/api/ai/estimate-task` route (uses ANTHROPIC_API_KEY from the Next app's `.env.local`).
  * Override with `VITE_BREAKPOINT_API_ORIGIN` if the app is not on localhost:3000.
  */
 

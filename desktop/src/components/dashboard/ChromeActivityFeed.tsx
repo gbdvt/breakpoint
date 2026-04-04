@@ -1,5 +1,6 @@
 import GlassPanel from "@/components/ui/GlassPanel";
 import SectionHeader from "@/components/ui/SectionHeader";
+import TranscriptOutlineCollapsible from "@/components/dashboard/TranscriptOutlineCollapsible";
 import type { ChromeBreakpointEvent } from "@/types/chromeFeed";
 
 type Props = {
@@ -30,6 +31,13 @@ function formatAgo(ts: number): string {
   const m = Math.floor(s / 60);
   if (m < 60) return `${m}m ago`;
   return `${Math.floor(m / 60)}h ago`;
+}
+
+function formatVideoLength(sec: number): string {
+  const s = Math.round(sec);
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}:${String(r).padStart(2, "0")}`;
 }
 
 export default function ChromeActivityFeed({ events, maxItems = 18 }: Props) {
@@ -73,7 +81,15 @@ export default function ChromeActivityFeed({ events, maxItems = 18 }: Props) {
                 </p>
                 <p className="mt-0.5 text-[10px] text-white/35">
                   {typeLabel(e.type)}
+                  {e.videoDurationSec != null &&
+                  Number.isFinite(e.videoDurationSec) ? (
+                    <span className="text-white/45">
+                      {" "}
+                      · video {formatVideoLength(e.videoDurationSec)}
+                    </span>
+                  ) : null}
                 </p>
+                <TranscriptOutlineCollapsible event={e} />
               </div>
             </li>
           ))}

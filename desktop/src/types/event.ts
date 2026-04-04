@@ -14,4 +14,9 @@ export type BreakpointEvent = {
   url?: string;
   /** Chrome tab id — used to attach late title updates from the extension. */
   tabId?: number;
+  /** YouTube: probed <video> duration in seconds. */
+  videoDurationSec?: number;
+  transcriptBullets?: string[];
+  transcriptStatus?: "pending" | "loading" | "ready" | "unavailable" | "error";
+  transcriptError?: string;
 };

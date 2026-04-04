@@ -1,4 +1,4 @@
-import { openaiJsonCompletion } from "@/lib/openaiClient";
+import { claudeJsonCompletion } from "@/lib/anthropicClient";
 
 export const runtime = "nodejs";
 
@@ -88,7 +88,7 @@ Rules:
 
   const user = `Task: ${goal}\nMode: ${mode}\n${plannedLine}\n${contextBlock}\n${profileLine}\nReturn JSON only.`;
 
-  const result = await openaiJsonCompletion<Out>(
+  const result = await claudeJsonCompletion<Out>(
     [
       { role: "system", content: system },
       { role: "user", content: user },

@@ -1,6 +1,6 @@
 export type SessionMode = "lecture" | "coding" | "writing" | "research";
 
-/** One cheap OpenAI call at session start; optional. */
+/** One cheap Claude call at session start; optional. */
 export type AiTaskEstimate = {
   minutesMin: number;
   minutesMax: number;

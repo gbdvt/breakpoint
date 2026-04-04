@@ -1,4 +1,4 @@
-import { openaiJsonCompletion } from "@/lib/openaiClient";
+import { claudeJsonCompletion } from "@/lib/anthropicClient";
 
 export const runtime = "nodejs";
 
@@ -33,7 +33,7 @@ export async function POST(req: Request) {
 
   const user = `Goal: ${goal}\nMode: ${mode}\nHeuristics: ${hints || "none"}\nRecent events (newest at bottom):\n${digest}`;
 
-  const result = await openaiJsonCompletion<Out>(
+  const result = await claudeJsonCompletion<Out>(
     [
       { role: "system", content: system },
       { role: "user", content: user },

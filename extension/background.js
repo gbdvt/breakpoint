@@ -4,6 +4,7 @@
  *
  * Drift scoring below mirrors breakpoint/lib/driftEngine.ts — keep in sync when tuning.
  * Tab titles are captured on events and refreshed via tabs.onUpdated (YouTube, ChatGPT, etc.).
+ * YouTube: youtubeProbe.js reads video.duration; caption transcript → Next API → transcriptBullets on queue events.
  * Drift interventions: bottom-right in-page overlay + toolbar badge; light reactive nudge on new tab (Ctrl+T).
  */
 
@@ -15,6 +16,8 @@ const STORAGE_LAST_DRIFT_UI = "breakpoint_last_drift_ui";
 const STORAGE_OVERLAY_EPISODE = "breakpoint_overlay_episode";
 
 const QUEUE_TOTAL_CAP_MIN = 180;
+/** Per-video ceiling for queue minutes (aligned with breakpoint/lib/researchQueueEstimate.ts). */
+const VIDEO_DURATION_MAX_MIN = 120;
 /** Drop stale episode so a long gap starts a fresh countdown. */
 const OVERLAY_EPISODE_MAX_MS = 40_000;
 /** Any new tab adds at least this (unknown URL or generic host) so totals move with real opens. */
@@ -119,6 +122,49 @@ function isResearchHintHost(host) {
   );
 }
 
+function minutesFromVideoDurationSec(sec) {
+  if (typeof sec !== "number" || !Number.isFinite(sec) || sec <= 0) return null;
+  return Math.min(
+    Math.max(1, Math.ceil(sec / 60)),
+    VIDEO_DURATION_MAX_MIN,
+  );
+}
+
+/** YouTube site or youtu.be link. */
+function isYoutubeHostFromEvent(domain, url) {
+  const d = domain ? normalizeHost(String(domain)) : "";
+  if (d.includes("youtube") || d === "youtube.com" || d.endsWith(".youtube.com"))
+    return true;
+  const u = url ? String(url) : "";
+  if (!u) return false;
+  try {
+    const h = normalizeHost(new URL(u).hostname);
+    return h === "youtu.be" || h.endsWith(".youtu.be");
+  } catch {
+    return false;
+  }
+}
+
+function isYoutubeWatchLikeUrl(url) {
+  const u = url ? String(url) : "";
+  return (
+    u.includes("youtube.com/watch") ||
+    u.includes("youtube.com/shorts/") ||
+    /youtu\.be\//i.test(u)
+  );
+}
+
+/**
+ * @param {{ domain?: string, url?: string, type?: string, videoDurationSec?: number } | null | undefined} e
+ */
+function shouldProbeVideoDuration(e) {
+  if (!e || typeof e !== "object" || e.tabId == null) return false;
+  if (e.type !== "TAB_CREATE" && e.type !== "NAVIGATION") return false;
+  if (!isYoutubeHostFromEvent(e.domain, e.url)) return false;
+  if (e.type === "NAVIGATION" && !isYoutubeWatchLikeUrl(e.url)) return false;
+  return true;
+}
+
 function computeDriftIndex(events) {
   let score = 0;
   const recent = events.slice(-RECENT_WINDOW);
@@ -148,14 +194,18 @@ function shouldIntervene(score) {
 /**
  * Per TAB_CREATE — aligned with breakpoint/lib/researchQueueEstimate.ts for known hosts;
  * generic/empty domain still counts TAB_CREATE_GENERIC_MIN so session totals track every open.
+ * @param {{ domain?: string, url?: string, videoDurationSec?: number }} e
  */
-function tabCreateQueueMinutes(domain) {
-  const d = domain ? normalizeHost(String(domain)) : "";
-  if (!d) return TAB_CREATE_GENERIC_MIN;
-  if (d.includes("youtube") || d === "youtube.com" || d.endsWith(".youtube.com"))
-    return 7;
-  if (isDistractorHost(d)) return 5;
-  if (isResearchHintHost(d)) return 4;
+function tabCreateQueueMinutes(e) {
+  const d = e?.domain ? normalizeHost(String(e.domain)) : "";
+  const url = e?.url ? String(e.url) : "";
+  if (!d && !url) return TAB_CREATE_GENERIC_MIN;
+  if (isYoutubeHostFromEvent(d || undefined, url)) {
+    const m = minutesFromVideoDurationSec(e?.videoDurationSec);
+    return m != null ? m : 7;
+  }
+  if (d && isDistractorHost(d)) return 5;
+  if (d && isResearchHintHost(d)) return 4;
   return TAB_CREATE_GENERIC_MIN;
 }
 
@@ -165,7 +215,7 @@ function estimateQueueDeltaFromBatch(items) {
   let sum = 0;
   for (const e of items) {
     if (!e || typeof e !== "object" || e.type !== "TAB_CREATE") continue;
-    sum += tabCreateQueueMinutes(e.domain);
+    sum += tabCreateQueueMinutes(e);
   }
   return Math.min(Math.round(sum), QUEUE_TOTAL_CAP_MIN);
 }
@@ -180,13 +230,15 @@ function estimateQueueTotalFromEvents(events) {
   for (const e of sorted) {
     if (!e || typeof e !== "object") continue;
     if (e.type === "TAB_CREATE") {
-      total += tabCreateQueueMinutes(e.domain);
+      total += tabCreateQueueMinutes(e);
     }
     const d = e.domain ? normalizeHost(String(e.domain)) : "";
     if (e.type === "NAVIGATION") {
       const url = e.url ? String(e.url) : "";
-      if (url.includes("youtube.com/watch")) total += 6;
-      else if (d && isResearchHintHost(d)) total += 3;
+      if (isYoutubeWatchLikeUrl(url)) {
+        const m = minutesFromVideoDurationSec(e.videoDurationSec);
+        total += m != null ? m : 6;
+      } else if (d && isResearchHintHost(d)) total += 3;
     }
   }
   return Math.min(Math.round(total), QUEUE_TOTAL_CAP_MIN);
@@ -247,6 +299,17 @@ async function saveState(session, events) {
 }
 
 const DESKTOP_MIRROR_URL = "http://127.0.0.1:17871/breakpoint/state";
+
+/** Next.js AI route (extension POSTs transcript text; key stays on server). */
+const TRANSCRIPT_SUMMARY_URLS = [
+  "http://localhost:3000/api/ai/summarize-youtube-transcript",
+  "http://127.0.0.1:3000/api/ai/summarize-youtube-transcript",
+  "http://localhost:3001/api/ai/summarize-youtube-transcript",
+  "http://127.0.0.1:3001/api/ai/summarize-youtube-transcript",
+];
+
+/** @type {Set<number>} */
+const transcriptSummarizeInflight = new Set();
 
 function mirrorToDesktop(session, events) {
   try {
@@ -640,6 +703,294 @@ async function syncDriftIntervention(events, session, triggerTabId, newItems) {
   }
 }
 
+function findLatestYoutubeQueueEventIndex(events, tabId) {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const e = events[i];
+    if (!e || typeof e !== "object" || e.tabId !== tabId) continue;
+    if (e.type !== "TAB_CREATE" && e.type !== "NAVIGATION") continue;
+    if (!isYoutubeHostFromEvent(e.domain, e.url)) continue;
+    if (e.type === "NAVIGATION" && !isYoutubeWatchLikeUrl(e.url)) continue;
+    return i;
+  }
+  return -1;
+}
+
+async function probeTabVideoDurationSec(tabId) {
+  try {
+    const res = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => {
+        const dur = (v) =>
+          v && Number.isFinite(v.duration) && v.duration > 1 ? v.duration : 0;
+        const inPlayer = document.querySelector("#movie_player video");
+        let bestD = dur(inPlayer);
+        for (const v of document.querySelectorAll("video")) {
+          const d = dur(v);
+          if (d > bestD) bestD = d;
+        }
+        if (bestD <= 0) return null;
+        return Math.round(bestD);
+      },
+    });
+    const r = res && res[0] && res[0].result;
+    return typeof r === "number" ? r : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Ensures youtubeProbe.js runs (tabs opened before install / session need a manual inject). */
+async function ensureYoutubeProbeInjected(tabId) {
+  if (tabId == null) return;
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ["youtubeProbe.js"],
+    });
+  } catch {
+    /* not injectable (e.g. chrome://) */
+  }
+}
+
+function timedTextJson3ToPlain(json) {
+  const events = json?.events;
+  if (!Array.isArray(events)) return "";
+  const parts = [];
+  for (const ev of events) {
+    const segs = ev?.segs;
+    if (!Array.isArray(segs)) continue;
+    for (const s of segs) {
+      const u = s?.utf8;
+      if (typeof u === "string" && u.trim()) parts.push(u.trim());
+    }
+  }
+  return parts.join(" ").replace(/\s+/g, " ").trim();
+}
+
+async function readYoutubeCaptionMetaFromTab(tabId) {
+  try {
+    const res = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      func: () => {
+        try {
+          const ytp = window.ytInitialPlayerResponse;
+          if (!ytp) return null;
+          const tracks =
+            ytp?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+          if (!Array.isArray(tracks) || !tracks.length) return null;
+          let t = tracks.find((x) => x.languageCode === "en" && !x.kind);
+          if (!t) t = tracks.find((x) => x.languageCode === "en");
+          if (!t) t = tracks[0];
+          const baseUrl = t?.baseUrl;
+          if (!baseUrl) return null;
+          return {
+            baseUrl: String(baseUrl),
+            title: String(ytp?.videoDetails?.title ?? ""),
+          };
+        } catch {
+          return null;
+        }
+      },
+    });
+    return res?.[0]?.result ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchYoutubeTimedTextPayload(tabId) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const meta = await readYoutubeCaptionMetaFromTab(tabId);
+    if (!meta?.baseUrl) continue;
+    const join = meta.baseUrl.includes("?") ? "&" : "?";
+    const url = `${meta.baseUrl}${join}fmt=json3`;
+    try {
+      const r = await fetch(url);
+      if (!r.ok) continue;
+      const j = await r.json();
+      const text = timedTextJson3ToPlain(j);
+      if (text && text.length >= 40) {
+        return { text, title: meta.title || "" };
+      }
+    } catch {
+      /* retry */
+    }
+  }
+  return null;
+}
+
+async function patchLatestYoutubeQueueEventMerge(tabId, patch) {
+  const { session, events } = await loadState();
+  if (!session?.id) return;
+  const idx = findLatestYoutubeQueueEventIndex(events, tabId);
+  if (idx < 0) return;
+  const prev = events[idx];
+  const copy = events.slice();
+  copy[idx] = { ...prev, ...patch };
+  await saveState(undefined, copy);
+  broadcastState(session, copy);
+}
+
+async function postTranscriptBullets(transcript, title) {
+  const body = JSON.stringify({
+    transcript: String(transcript).slice(0, 24_000),
+    title: String(title || "").slice(0, 200),
+  });
+  const ctrl = new AbortController();
+  const kill = setTimeout(() => ctrl.abort(), 55_000);
+  try {
+    for (const url of TRANSCRIPT_SUMMARY_URLS) {
+      try {
+        const r = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body,
+          signal: ctrl.signal,
+        });
+        if (!r.ok) continue;
+        const j = await r.json();
+        if (Array.isArray(j.bullets) && j.bullets.length > 0) return j.bullets;
+      } catch {
+        /* try next URL */
+      }
+    }
+  } finally {
+    clearTimeout(kill);
+  }
+  return null;
+}
+
+async function summarizeYoutubeQueueItem(tabId) {
+  if (tabId == null) return;
+  if (!(await trackingActive())) return;
+  if (transcriptSummarizeInflight.has(tabId)) return;
+
+  const { session, events } = await loadState();
+  if (!session?.id) return;
+  const idx0 = findLatestYoutubeQueueEventIndex(events, tabId);
+  if (idx0 < 0) return;
+  const ev0 = events[idx0];
+  if (
+    ev0.transcriptStatus === "ready" &&
+    Array.isArray(ev0.transcriptBullets) &&
+    ev0.transcriptBullets.length > 0
+  )
+    return;
+  if (ev0.transcriptStatus === "unavailable") return;
+
+  transcriptSummarizeInflight.add(tabId);
+  try {
+    await patchLatestYoutubeQueueEventMerge(tabId, {
+      transcriptStatus: "loading",
+      transcriptError: undefined,
+    });
+
+    let tab;
+    try {
+      tab = await chrome.tabs.get(tabId);
+    } catch {
+      await patchLatestYoutubeQueueEventMerge(tabId, {
+        transcriptStatus: "error",
+        transcriptError: "Tab closed",
+      });
+      return;
+    }
+    const u = tab?.url || tab?.pendingUrl || "";
+    if (!isYoutubeHostFromEvent(hostFromUrl(u), u)) {
+      await patchLatestYoutubeQueueEventMerge(tabId, {
+        transcriptStatus: "unavailable",
+        transcriptError: undefined,
+      });
+      return;
+    }
+
+    const payload = await fetchYoutubeTimedTextPayload(tabId);
+    if (!payload?.text) {
+      await patchLatestYoutubeQueueEventMerge(tabId, {
+        transcriptStatus: "unavailable",
+        transcriptError:
+          "No captions on this video or the page is still loading them.",
+      });
+      return;
+    }
+
+    const bullets = await postTranscriptBullets(payload.text, payload.title);
+    if (!bullets) {
+      await patchLatestYoutubeQueueEventMerge(tabId, {
+        transcriptStatus: "error",
+        transcriptError:
+          "Could not summarize (run Next.js on :3000 with ANTHROPIC_API_KEY, or try :3001).",
+      });
+      return;
+    }
+
+    const clean = bullets
+      .map((x) => String(x ?? "").trim())
+      .filter(Boolean)
+      .slice(0, 5);
+    await patchLatestYoutubeQueueEventMerge(tabId, {
+      transcriptStatus: "ready",
+      transcriptBullets: clean,
+      transcriptError: undefined,
+    });
+  } catch {
+    await patchLatestYoutubeQueueEventMerge(tabId, {
+      transcriptStatus: "error",
+      transcriptError: "Something went wrong.",
+    });
+  } finally {
+    transcriptSummarizeInflight.delete(tabId);
+  }
+}
+
+async function patchEventWithVideoDuration(tabId, durationSec) {
+  if (typeof durationSec !== "number" || !Number.isFinite(durationSec) || durationSec <= 0)
+    return;
+  const { session, events } = await loadState();
+  if (!session?.id) return;
+  const idx = findLatestYoutubeQueueEventIndex(events, tabId);
+  if (idx < 0) return;
+  const prev = events[idx];
+  if (
+    typeof prev.videoDurationSec === "number" &&
+    Number.isFinite(prev.videoDurationSec) &&
+    prev.videoDurationSec > 0
+  )
+    return;
+  const copy = events.slice();
+  copy[idx] = { ...prev, videoDurationSec: Math.round(durationSec) };
+  await saveState(undefined, copy);
+  broadcastState(session, copy);
+}
+
+async function tryProbeAndPatchVideoDuration(tabId) {
+  if (!(await trackingActive())) return;
+  const { session, events } = await loadState();
+  if (!session?.id) return;
+  const idx = findLatestYoutubeQueueEventIndex(events, tabId);
+  if (idx < 0) return;
+  const prev = events[idx];
+  if (
+    typeof prev.videoDurationSec === "number" &&
+    Number.isFinite(prev.videoDurationSec) &&
+    prev.videoDurationSec > 0
+  )
+    return;
+  let tab;
+  try {
+    tab = await chrome.tabs.get(tabId);
+  } catch {
+    return;
+  }
+  const u = tab?.url || tab?.pendingUrl || "";
+  if (!/^https?:\/\//i.test(u)) return;
+  if (!isYoutubeHostFromEvent(hostFromUrl(u), u)) return;
+  const sec = await probeTabVideoDurationSec(tabId);
+  if (sec == null) return;
+  await patchEventWithVideoDuration(tabId, sec);
+}
+
 async function appendEvents(newItems) {
   const { session, events } = await loadState();
   if (!session?.id) return;
@@ -652,6 +1003,16 @@ async function appendEvents(newItems) {
   broadcastState(session, next);
   await syncDriftIntervention(next, session, triggerTabId, newItems);
   await maybeDistractorArrivalNudges(next, newItems);
+  const ytWorkTabs = new Set();
+  for (const e of newItems) {
+    if (!shouldProbeVideoDuration(e) || e.tabId == null) continue;
+    if (ytWorkTabs.has(e.tabId)) continue;
+    ytWorkTabs.add(e.tabId);
+    void ensureYoutubeProbeInjected(e.tabId).then(() => {
+      void tryProbeAndPatchVideoDuration(e.tabId);
+      void summarizeYoutubeQueueItem(e.tabId);
+    });
+  }
 }
 
 /**
@@ -696,6 +1057,15 @@ async function trackingActive() {
   return !!(session && session.id && !session.endedAt);
 }
 
+/** Re-run caption fetch when user focuses a YouTube tab (first load may have been too early). */
+async function maybeRetriggerYoutubeTranscriptOnFocus(tabId, url) {
+  if (tabId == null || !url) return;
+  if (!isYoutubeHostFromEvent(hostFromUrl(url), String(url))) return;
+  void ensureYoutubeProbeInjected(tabId).then(() =>
+    summarizeYoutubeQueueItem(tabId),
+  );
+}
+
 async function handleSessionStart(session) {
   resetTrackingGuards();
   await clearBadge();
@@ -708,6 +1078,23 @@ async function handleSessionStart(session) {
 
   const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
   lastActiveTabId = tabs[0]?.id ?? null;
+
+  void chrome.tabs
+    .query({
+      url: [
+        "*://www.youtube.com/*",
+        "*://youtube.com/*",
+        "*://m.youtube.com/*",
+        "*://music.youtube.com/*",
+        "*://youtu.be/*",
+      ],
+    })
+    .then((ytTabs) => {
+      for (const t of ytTabs) {
+        if (t.id != null) void ensureYoutubeProbeInjected(t.id);
+      }
+    })
+    .catch(() => {});
 
   return { ok: true };
 }
@@ -738,7 +1125,19 @@ async function handleClearAll() {
   return { ok: true };
 }
 
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg?.type === "YOUTUBE_VIDEO_DURATION") {
+    const tabId = sender.tab?.id;
+    const sec = msg.durationSec;
+    if (tabId == null || typeof sec !== "number" || !Number.isFinite(sec)) {
+      sendResponse({ ok: false });
+      return false;
+    }
+    void patchEventWithVideoDuration(tabId, sec).then(() =>
+      sendResponse({ ok: true }),
+    );
+    return true;
+  }
   if (msg?.type === "OVERLAY_DISMISSED") {
     void clearBadge();
     sendResponse({ ok: true });
@@ -850,7 +1249,10 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
 
     chrome.tabs.get(prevTabId, (prev) => {
       if (chrome.runtime.lastError) {
-        void appendEvents([tabToEvent(tab, "TAB_SWITCH")]);
+        void (async () => {
+          await appendEvents([tabToEvent(tab, "TAB_SWITCH")]);
+          await maybeRetriggerYoutubeTranscriptOnFocus(tab.id, url);
+        })();
         return;
       }
 
@@ -887,7 +1289,10 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
         lastDistractorVisit[domain] = now;
       }
 
-      void appendEvents(events);
+      void (async () => {
+        await appendEvents(events);
+        await maybeRetriggerYoutubeTranscriptOnFocus(tab.id, url);
+      })();
     });
   });
 });
