@@ -4,6 +4,8 @@ import SessionSummaryCards from "@/components/session/SessionSummaryCards";
 import SessionTimeline from "@/components/session/SessionTimeline";
 import { useChromeBridgeFeed } from "@/hooks/useChromeBridgeFeed";
 import { DUMMY_SESSION_DETAIL } from "@/lib/dummyData";
+import { computeDriftIndex, shouldIntervene } from "@/lib/driftEngine";
+import { liveBehaviorLabel } from "@/lib/liveBehaviorLabel";
 import { buildLiveSessionDetail, sessionIsLive } from "@/lib/liveSessionDetail";
 
 export default function SessionDetailView() {
@@ -25,11 +27,7 @@ export default function SessionDetailView() {
           >
             ← Sessions
           </Link>
-          <p className="text-[13px] leading-relaxed text-white/55">
-            No active Chrome session. Start one from your web dashboard (
-            <span className="font-mono text-white/70">localhost:3000</span>)
-            with the extension enabled, then open this view again.
-          </p>
+          <p className="text-[13px] text-white/45">No active session.</p>
         </>
       );
     }
@@ -37,6 +35,8 @@ export default function SessionDetailView() {
     if (!detail) {
       return null;
     }
+    const driftLive = computeDriftIndex(feed.events);
+    const hintLive = liveBehaviorLabel(feed.events);
     return (
       <>
         <Link
@@ -45,6 +45,30 @@ export default function SessionDetailView() {
         >
           ← Sessions
         </Link>
+        <div className="mb-4">
+          <div className="glass-card px-3 py-3">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-white/35">
+              Drift load (rolling)
+            </p>
+            <p
+              className={`mt-1 text-2xl font-semibold tabular-nums tracking-tight ${
+                shouldIntervene(driftLive)
+                  ? "text-amber-200/95"
+                  : "text-white/90"
+              }`}
+            >
+              {driftLive}
+            </p>
+            <p className="mt-1 text-[10px] text-white/35">
+              Rule-based score from recent events; not a medical measure.
+            </p>
+            {hintLive ? (
+              <p className="mt-2 text-[12px] font-medium text-amber-100/85">
+                {hintLive}
+              </p>
+            ) : null}
+          </div>
+        </div>
         <SessionDetailPanel detail={detail} />
         <div className="mt-5 space-y-5">
           <SessionSummaryCards
@@ -66,7 +90,7 @@ export default function SessionDetailView() {
           ...DUMMY_SESSION_DETAIL,
           id: id ?? "unknown",
           name: `Session · ${id ?? "?"}`,
-          dateLabel: "Demo layout · placeholder",
+          dateLabel: "—",
         };
 
   return (

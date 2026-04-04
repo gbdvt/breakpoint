@@ -32,7 +32,7 @@ export default function AppShell({
   const [circleOpen, setCircleOpen] = useState(false);
 
   return (
-    <div className="relative min-h-screen overflow-x-hidden font-[family-name:var(--font-plus-jakarta)]">
+    <div className="relative min-h-screen overflow-x-hidden font-[family-name:var(--font-sans)]">
       <div className="pointer-events-none fixed inset-0 -z-10" aria-hidden>
         <div className="absolute inset-0 bg-[#060a14]" />
         <div className="absolute inset-0 bg-gradient-to-br from-indigo-950/90 via-[#0c1430] to-[#050818]" />

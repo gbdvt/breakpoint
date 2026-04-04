@@ -33,11 +33,8 @@ export default function CircleDrawer({ onClose }: Props) {
           <div className="border-b border-white/[0.06] px-5 py-4">
             <div className="flex items-center justify-between gap-2">
               <div>
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-indigo-300/70">
-                  Accountability
-                </p>
                 <h2 className="text-lg font-semibold tracking-tight text-white">
-                  Your Circle
+                  Friends
                 </h2>
               </div>
               <button
@@ -48,9 +45,6 @@ export default function CircleDrawer({ onClose }: Props) {
                 Close
               </button>
             </div>
-            <p className="mt-2 text-[11px] leading-relaxed text-white/45">
-              Lightweight presence — no noise. (Placeholder data for UI.)
-            </p>
           </div>
           <div className="flex-1 overflow-y-auto px-3 py-3">
             <div className="space-y-0.5">

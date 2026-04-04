@@ -28,10 +28,6 @@ export default function SessionsListPage() {
 
   return (
     <div className="space-y-3">
-      <p className="text-[12px] leading-relaxed text-white/50">
-        Past work blocks — the first row is your{" "}
-        <span className="text-white/65">live Chrome session</span> when active.
-      </p>
       <WorkSessionsPanel sessions={sessions} />
     </div>
   );

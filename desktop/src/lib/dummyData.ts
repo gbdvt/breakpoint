@@ -89,6 +89,47 @@ export const DUMMY_TASKS: Task[] = [
   },
 ];
 
+/** Compact rows for home “Sessions” accordion (mock). */
+export type HomeSessionSummary = {
+  id: string;
+  label: string;
+  durationLabel: string;
+  timeRange: string;
+  workLabel: string;
+  /** Focus minutes (for “worked today” total). */
+  focusMin: number;
+  distractions: number;
+  taskCount: number;
+};
+
+export const MOCK_HOME_SESSIONS: HomeSessionSummary[] = [
+  {
+    id: "h1",
+    label: "Evening session",
+    durationLabel: "1h 24m",
+    timeRange: "6:30 PM – 7:54 PM",
+    workLabel: "58 min focus",
+    focusMin: 58,
+    distractions: 12,
+    taskCount: 4,
+  },
+  {
+    id: "h2",
+    label: "Morning block",
+    durationLabel: "52m",
+    timeRange: "9:05 AM – 9:57 AM",
+    workLabel: "44 min focus",
+    focusMin: 44,
+    distractions: 3,
+    taskCount: 2,
+  },
+];
+
+/** Mock “already worked today” before the current session (minutes). */
+export function mockWorkedTodayBaseMin(): number {
+  return MOCK_HOME_SESSIONS.reduce((a, s) => a + s.focusMin, 0);
+}
+
 export const DUMMY_SESSIONS: WorkSessionListItem[] = [
   {
     id: "demo-1",

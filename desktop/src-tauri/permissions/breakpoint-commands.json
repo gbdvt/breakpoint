@@ -1,0 +1,23 @@
+{
+  "default": null,
+  "permission": [
+    {
+      "identifier": "breakpoint-commands",
+      "description": "Breakpoint custom IPC commands",
+      "commands": {
+        "allow": [
+          "queue_session_start",
+          "queue_session_end",
+          "queue_clear_extension_state",
+          "get_chrome_bridge_state",
+          "open_floating_window",
+          "close_floating_window",
+          "toggle_floating_always_on_top",
+          "open_focus_window",
+          "focus_main_window"
+        ],
+        "deny": []
+      }
+    }
+  ]
+}

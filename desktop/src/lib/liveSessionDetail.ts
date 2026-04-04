@@ -33,10 +33,7 @@ export function buildLiveSessionDetail(feed: ParsedChromeFeed): SessionDetail | 
     durationMin: elapsedMin,
     tasksCompleted: 0,
     distractions: d,
-    milestones:
-      d === 0
-        ? ["No drift signals recorded yet in this session."]
-        : [`${d} drift-related signal${d === 1 ? "" : "s"} from Chrome.`],
+    milestones: [],
     queueCostMin: 0,
     timeline: mapChromeEventsToTimeline(feed.events),
   };

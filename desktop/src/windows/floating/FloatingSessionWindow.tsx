@@ -61,7 +61,7 @@ export default function FloatingSessionWindow() {
   }, []);
 
   return (
-    <div className="floating-hud-layout font-[family-name:var(--font-plus-jakarta)]">
+    <div className="floating-hud-layout font-[family-name:var(--font-sans)]">
       <motion.div
         initial={{ opacity: 0, y: 4 }}
         animate={{ opacity: 1, y: 0 }}
@@ -77,10 +77,7 @@ export default function FloatingSessionWindow() {
             "0 0 0 1px rgba(255,255,255,0.14) inset, 0 1px 0 rgba(255,255,255,0.22) inset, 0 12px 40px rgba(37,99,235,0.28), 0 4px 16px rgba(15,23,42,0.35)",
         }}
       >
-        <span
-          className="shrink-0 font-mono text-[14px] font-semibold tabular-nums text-white"
-          style={{ fontFamily: '"JetBrains Mono", ui-monospace, monospace' }}
-        >
+        <span className="shrink-0 text-[14px] font-semibold tabular-nums tracking-tight text-white">
           {time}
         </span>
 

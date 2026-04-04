@@ -33,7 +33,7 @@ export default function TimelineEventItem({ event, isLast }: Props) {
       />
       <div className="min-w-0 flex-1 pb-6">
         <div className="flex flex-wrap items-baseline gap-2">
-          <span className="font-mono text-[11px] tabular-nums text-white/40">
+          <span className="text-[11px] font-medium tabular-nums text-white/40">
             {event.time}
           </span>
           <span className={`text-[12px] font-semibold ${toneLabel[event.tone]}`}>

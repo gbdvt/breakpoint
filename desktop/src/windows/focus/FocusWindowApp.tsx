@@ -11,7 +11,7 @@ import {
 
 export default function FocusWindowApp() {
   return (
-    <div className="relative min-h-screen overflow-hidden font-[family-name:var(--font-plus-jakarta)]">
+    <div className="relative min-h-screen overflow-hidden font-[family-name:var(--font-sans)]">
       <div className="pointer-events-none fixed inset-0 -z-10" aria-hidden>
         <div className="absolute inset-0 bg-[#060a14]" />
         <div className="absolute inset-0 bg-gradient-to-b from-indigo-950/80 via-[#0c1430] to-[#050818]" />
@@ -66,7 +66,7 @@ export default function FocusWindowApp() {
                 key={s.id}
                 className="flex items-center gap-3 rounded-xl px-2 py-2"
               >
-                <div className="flex size-9 shrink-0 flex-col items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.04] font-mono text-[9px] text-white/70">
+                <div className="flex size-9 shrink-0 flex-col items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.04] text-[9px] font-semibold tabular-nums text-white/70">
                   <span className="text-white/90">{s.durationMin}</span>
                   <span className="text-[7px] uppercase text-white/35">m</span>
                 </div>

@@ -21,15 +21,9 @@ export default function StatsHeader({ title = "Focus analytics" }: Props) {
   return (
     <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
       <div>
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-indigo-300/65">
-          Long-term view
-        </p>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-white">
+        <h1 className="text-2xl font-semibold tracking-tight text-white">
           {title}
         </h1>
-        <p className="mt-2 max-w-md text-[12px] text-white/45">
-          Hours vs distractions — compact, not finance-bro. (Demo data.)
-        </p>
       </div>
       <div className="flex flex-col items-stretch gap-3 sm:items-end">
         <SegmentedControl<Range>

@@ -23,7 +23,10 @@
         "maximizable": false,
         "decorations": false,
         "shadow": false,
-        "center": true
+        "center": false,
+        "x": 16,
+        "y": 40,
+        "preventOverflow": true
       }
     ],
     "security": {

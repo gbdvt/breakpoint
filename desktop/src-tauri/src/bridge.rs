@@ -55,6 +55,17 @@ impl Default for BridgeHub {
 
 pub type SharedHub = Arc<Mutex<BridgeHub>>;
 
+fn now_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+fn emit_bridge_refresh(app: &AppHandle) {
+    let _ = app.emit("chrome-bridge-updated", ());
+}
+
 fn cors_headers() -> Vec<Header> {
     vec![
         Header::from_bytes(&b"Access-Control-Allow-Origin"[..], &b"*"[..]).unwrap(),
@@ -193,22 +204,46 @@ pub fn get_chrome_bridge_state(hub: State<SharedHub>) -> Result<BridgeSnapshot, 
 }
 
 #[tauri::command]
-pub fn queue_session_start(hub: State<SharedHub>, session: Value) -> Result<(), String> {
+pub fn queue_session_start(
+    app: AppHandle,
+    hub: State<SharedHub>,
+    session: Value,
+) -> Result<(), String> {
     let mut g = hub.lock().map_err(|e| e.to_string())?;
-    g.pending = Some(PendingCommand::SessionStart(session));
+    g.pending = Some(PendingCommand::SessionStart(session.clone()));
+    let t = now_ms();
+    g.snapshot.session = Some(session);
+    g.snapshot.events = vec![];
+    g.snapshot.updated_at_ms = t;
+    drop(g);
+    emit_bridge_refresh(&app);
     Ok(())
 }
 
 #[tauri::command]
-pub fn queue_session_end(hub: State<SharedHub>) -> Result<(), String> {
+pub fn queue_session_end(app: AppHandle, hub: State<SharedHub>) -> Result<(), String> {
     let mut g = hub.lock().map_err(|e| e.to_string())?;
     g.pending = Some(PendingCommand::SessionEnd);
+    let t = now_ms();
+    if let Some(Value::Object(ref mut map)) = g.snapshot.session {
+        map.insert("endedAt".to_string(), json!(t));
+    }
+    g.snapshot.updated_at_ms = t;
+    drop(g);
+    emit_bridge_refresh(&app);
     Ok(())
 }
 
 #[tauri::command]
-pub fn queue_clear_extension_state(hub: State<SharedHub>) -> Result<(), String> {
+pub fn queue_clear_extension_state(app: AppHandle, hub: State<SharedHub>) -> Result<(), String> {
     let mut g = hub.lock().map_err(|e| e.to_string())?;
     g.pending = Some(PendingCommand::ClearAll);
+    let t = now_ms();
+    g.snapshot = BridgeSnapshot {
+        updated_at_ms: t,
+        ..Default::default()
+    };
+    drop(g);
+    emit_bridge_refresh(&app);
     Ok(())
 }

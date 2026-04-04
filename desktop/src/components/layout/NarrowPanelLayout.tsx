@@ -4,7 +4,9 @@ import { AnimatePresence } from "framer-motion";
 import { Link, Outlet, useLocation } from "react-router-dom";
 import { useState } from "react";
 import CircleDrawer from "@/components/social/CircleDrawer";
+import SettingsSheet from "@/components/home/SettingsSheet";
 import PanelSessionDock from "@/components/session/PanelSessionDock";
+import type { HomeOutletContext } from "@/lib/homeOutlet";
 import {
   closeMainWindow,
   isTauri,
@@ -12,36 +14,40 @@ import {
   openFloatingWindow,
 } from "@/lib/tauriBridge";
 
-const TABS: { to: string; label: string }[] = [
-  { to: "/", label: "Queue" },
-  { to: "/sessions", label: "Sessions" },
-  { to: "/stats", label: "Stats" },
-];
-
 export default function NarrowPanelLayout() {
   const pathname = useLocation().pathname;
+
   const [circleOpen, setCircleOpen] = useState(false);
-  const [hudError, setHudError] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  const outletContext: HomeOutletContext = {
+    openFriends: () => setCircleOpen(true),
+    openSettings: () => setSettingsOpen(true),
+  };
 
   async function openHud() {
-    setHudError(null);
-    if (!isTauri()) {
-      setHudError("Run inside Tauri (npm run tauri:dev) for the floating HUD.");
-      return;
-    }
-    const res = await openFloatingWindow();
-    if (!res.ok) {
-      setHudError(res.error ?? "Could not open floating window.");
-    }
+    if (!isTauri()) return;
+    await openFloatingWindow();
   }
 
   return (
-    <div className="relative min-h-[100dvh] overflow-hidden font-[family-name:var(--font-plus-jakarta)]">
+    <div className="relative min-h-[100dvh] overflow-hidden font-[family-name:var(--font-sans)]">
       <div className="pointer-events-none fixed inset-0 -z-10" aria-hidden>
-        <div className="absolute inset-0 bg-[#060a14]" />
-        <div className="absolute inset-0 bg-gradient-to-b from-indigo-950/95 via-[#0a1028] to-[#050818]" />
-        <div className="absolute -top-24 left-1/2 h-[420px] w-[420px] -translate-x-1/2 rounded-full bg-indigo-600/18 blur-[100px]" />
-        <div className="absolute bottom-0 right-0 h-[320px] w-[320px] rounded-full bg-violet-700/12 blur-[90px]" />
+        <div className="absolute inset-0 bg-[#070b16]" />
+        <div className="absolute inset-0 bg-gradient-to-b from-[#0c1226] via-[#080d1a] to-[#050810]" />
+        <div className="absolute -top-28 left-1/2 h-[380px] w-[min(100%,520px)] -translate-x-1/2 rounded-full bg-indigo-500/14 blur-[88px]" />
+        <div className="absolute bottom-0 right-0 h-[280px] w-[280px] rounded-full bg-violet-600/10 blur-[80px]" />
+        <div
+          className="absolute inset-0 opacity-[0.22]"
+          style={{
+            backgroundImage:
+              "repeating-linear-gradient(118deg, rgba(255,255,255,0.09) 0 1px, transparent 1px 20px)",
+            maskImage:
+              "radial-gradient(ellipse 90% 70% at 100% 100%, black 0%, transparent 68%)",
+            WebkitMaskImage:
+              "radial-gradient(ellipse 90% 70% at 100% 100%, black 0%, transparent 68%)",
+          }}
+        />
       </div>
 
       <div
@@ -54,117 +60,74 @@ export default function NarrowPanelLayout() {
             aria-hidden
           />
         ) : null}
-        <div
-          className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[28px] border border-white/[0.12] shadow-[0_24px_80px_rgba(0,0,0,0.55)]"
-          style={{
-            background:
-              "linear-gradient(165deg, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.04) 40%, rgba(15,23,42,0.45) 100%)",
-            backdropFilter: "blur(32px) saturate(1.35)",
-            WebkitBackdropFilter: "blur(32px) saturate(1.35)",
-            boxShadow:
-              "0 0 0 1px rgba(255,255,255,0.06) inset, 0 1px 0 rgba(255,255,255,0.1) inset, 0 24px 80px rgba(0,0,0,0.55)",
-          }}
-        >
-          <header className="shrink-0 border-b border-white/[0.08]">
-            <div className="px-4 pb-3 pt-3" data-tauri-drag-region>
-              <div className="flex items-center justify-between gap-2">
-                <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-indigo-300/70">
-                    Breakpoint
-                  </p>
-                  <p className="text-[15px] font-semibold text-white/95">Panel</p>
-                </div>
-                <div className="no-drag flex items-center gap-1">
-                  {isTauri() ? (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => void minimizeMainWindow()}
-                        className="flex size-8 items-center justify-center rounded-lg border border-white/[0.1] bg-white/[0.05] text-[15px] font-light leading-none text-white/75 hover:bg-white/[0.1]"
-                        aria-label="Minimize window"
-                        title="Minimize"
-                      >
-                        −
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void closeMainWindow()}
-                        className="flex size-8 items-center justify-center rounded-lg border border-white/[0.1] bg-white/[0.05] text-[14px] font-light leading-none text-white/75 hover:bg-rose-500/25 hover:text-rose-100"
-                        aria-label="Close window"
-                        title="Close"
-                      >
-                        ×
-                      </button>
-                    </>
-                  ) : null}
-                  <button
-                    type="button"
-                    onClick={() => void openHud()}
-                    className="rounded-full border border-fuchsia-400/25 bg-fuchsia-500/15 px-2.5 py-1.5 text-[10px] font-semibold text-fuchsia-100/95 hover:bg-fuchsia-500/25"
-                    title="Distraction / live HUD (always on top)"
-                  >
-                    HUD
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setCircleOpen(true)}
-                    className="flex size-9 items-center justify-center rounded-full border border-white/10 bg-white/[0.06] text-[13px] text-white/70 hover:bg-white/[0.1]"
-                    aria-label="Your Circle"
-                  >
-                    ⌁
-                  </button>
-                </div>
-              </div>
-              <nav className="mt-3 flex gap-1.5">
-                {TABS.map((t) => {
-                  const active =
-                    t.to === "/"
-                      ? pathname === "/"
-                      : pathname === t.to || pathname.startsWith(`${t.to}/`);
-                  return (
-                    <Link
-                      key={t.to}
-                      to={t.to}
-                      className={`rounded-full px-3 py-1.5 text-[11px] font-medium transition ${
-                        active
-                          ? "bg-white/[0.14] text-white"
-                          : "text-white/45 hover:bg-white/[0.06] hover:text-white/75"
-                      }`}
+        <div className="glass-card-strong flex min-h-0 flex-1 flex-col overflow-hidden rounded-[22px] shadow-[0_20px_64px_rgba(0,0,0,0.45)]">
+          <header className="shrink-0 border-b border-white/[0.06]">
+            <div
+              className="flex items-center justify-end gap-1 px-3 py-2.5"
+              data-tauri-drag-region
+            >
+              <div className="no-drag flex flex-1 items-center justify-end gap-1">
+                {isTauri() ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => void openHud()}
+                      className="flex size-8 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.04] text-[11px] text-fuchsia-200/80 hover:bg-white/[0.08]"
+                      aria-label="HUD"
                     >
-                      {t.label}
-                    </Link>
-                  );
-                })}
-              <Link
-                to="/session/live"
-                className={`rounded-full px-3 py-1.5 text-[11px] font-medium transition ${
-                  pathname.startsWith("/session/")
-                    ? "bg-white/[0.14] text-white"
-                    : "text-white/45 hover:bg-white/[0.06] hover:text-white/75"
-                }`}
-              >
-                Live
-              </Link>
-              </nav>
-              {hudError ? (
-                <p className="mt-2 text-[10px] leading-snug text-amber-300/90">
-                  {hudError}
-                </p>
-              ) : null}
+                      ◎
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void minimizeMainWindow()}
+                      className="flex size-8 items-center justify-center rounded-lg border border-white/[0.1] bg-white/[0.05] text-[15px] font-light leading-none text-white/75 hover:bg-white/[0.1]"
+                      aria-label="Minimize"
+                    >
+                      −
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void closeMainWindow()}
+                      className="flex size-8 items-center justify-center rounded-lg border border-white/[0.1] bg-white/[0.05] text-[14px] font-light leading-none text-white/75 hover:bg-rose-500/25 hover:text-rose-100"
+                      aria-label="Close"
+                    >
+                      ×
+                    </button>
+                  </>
+                ) : null}
+              </div>
             </div>
+            {pathname === "/stats" ||
+            pathname === "/sessions" ||
+            pathname.startsWith("/session/") ? (
+              <div className="no-drag border-t border-white/[0.05] px-3 py-2">
+                <Link
+                  to="/"
+                  className="text-[12px] text-white/45 hover:text-white/75"
+                >
+                  ← Back
+                </Link>
+              </div>
+            ) : null}
           </header>
 
-          <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-3">
-            <Outlet />
+          <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <div className="min-h-0 flex-1 overflow-hidden">
+              <Outlet context={outletContext} />
+            </div>
+            <PanelSessionDock />
           </main>
-
-          <PanelSessionDock />
         </div>
       </div>
 
       <AnimatePresence>
         {circleOpen ? (
           <CircleDrawer onClose={() => setCircleOpen(false)} />
+        ) : null}
+      </AnimatePresence>
+      <AnimatePresence>
+        {settingsOpen ? (
+          <SettingsSheet onClose={() => setSettingsOpen(false)} />
         ) : null}
       </AnimatePresence>
     </div>

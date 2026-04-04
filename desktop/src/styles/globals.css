@@ -1,7 +1,11 @@
 @import "tailwindcss";
 
 :root {
-  --font-plus-jakarta: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --glass-edge: rgba(165, 243, 252, 0.09);
+  --glass-fill-top: rgba(255, 255, 255, 0.045);
+  --glass-fill-mid: rgba(255, 255, 255, 0.02);
+  --glass-inset: rgba(255, 255, 255, 0.055);
 }
 
 html,
@@ -14,11 +18,10 @@ body {
   min-height: 100vh;
   background: #060a14;
   color: #fafafa;
-  font-family:
-    "Plus Jakarta Sans",
-    system-ui,
-    -apple-system,
-    sans-serif;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 /* Frameless floating webview: native + WebView2 see-through; only the pill draws pixels */
@@ -85,4 +88,37 @@ a,
 input {
   -webkit-app-region: no-drag;
   app-region: no-drag;
+}
+
+/* Refined glass panels — subtle fade, thin cyan-tinted edge */
+.glass-card {
+  border-radius: 16px;
+  border: 1px solid var(--glass-edge);
+  background: linear-gradient(
+    165deg,
+    var(--glass-fill-top) 0%,
+    var(--glass-fill-mid) 45%,
+    rgba(15, 23, 42, 0.22) 100%
+  );
+  box-shadow:
+    inset 0 1px 0 var(--glass-inset),
+    0 1px 0 rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(20px) saturate(1.2);
+  -webkit-backdrop-filter: blur(20px) saturate(1.2);
+}
+
+.glass-card-strong {
+  border-radius: 18px;
+  border: 1px solid rgba(186, 230, 253, 0.11);
+  background: linear-gradient(
+    168deg,
+    rgba(255, 255, 255, 0.055) 0%,
+    rgba(255, 255, 255, 0.02) 50%,
+    rgba(15, 23, 42, 0.35) 100%
+  );
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 12px 40px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(28px) saturate(1.25);
+  -webkit-backdrop-filter: blur(28px) saturate(1.25);
 }
