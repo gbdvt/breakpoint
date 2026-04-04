@@ -1,5 +1,3 @@
-import GlassPanel from "@/components/ui/GlassPanel";
-
 type Props = {
   label: string;
   value: string | number;
@@ -22,18 +20,18 @@ export default function StatCard({
   accent = "default",
 }: Props) {
   return (
-    <GlassPanel variant="subtle" className="p-3.5">
-      <p className="text-[10px] font-medium uppercase tracking-wider text-white/40">
+    <div className="glass-card p-3.5">
+      <p className="text-[10px] font-medium uppercase tracking-wider text-white/38">
         {label}
       </p>
       <p
-        className={`mt-1 font-mono text-xl font-semibold tabular-nums tracking-tight ${accentValue[accent]}`}
+        className={`mt-1 text-[22px] font-semibold tabular-nums tracking-tight ${accentValue[accent]}`}
       >
         {value}
       </p>
       {hint ? (
         <p className="mt-1 text-[11px] leading-snug text-white/45">{hint}</p>
       ) : null}
-    </GlassPanel>
+    </div>
   );
 }

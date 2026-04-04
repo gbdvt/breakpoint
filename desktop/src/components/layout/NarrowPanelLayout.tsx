@@ -72,7 +72,7 @@ export default function NarrowPanelLayout() {
                     <button
                       type="button"
                       onClick={() => void openHud()}
-                      className="flex size-8 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.04] text-[11px] text-fuchsia-200/80 hover:bg-white/[0.08]"
+                      className="flex size-8 items-center justify-center rounded-xl border border-cyan-100/[0.1] bg-white/[0.05] text-[11px] text-fuchsia-200/75 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-sm transition hover:border-cyan-100/[0.14] hover:bg-white/[0.08]"
                       aria-label="HUD"
                     >
                       ◎
@@ -80,7 +80,7 @@ export default function NarrowPanelLayout() {
                     <button
                       type="button"
                       onClick={() => void minimizeMainWindow()}
-                      className="flex size-8 items-center justify-center rounded-lg border border-white/[0.1] bg-white/[0.05] text-[15px] font-light leading-none text-white/75 hover:bg-white/[0.1]"
+                      className="flex size-8 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.04] text-[15px] font-light leading-none text-white/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-sm transition hover:bg-white/[0.08] hover:text-white/88"
                       aria-label="Minimize"
                     >
                       −
@@ -88,7 +88,7 @@ export default function NarrowPanelLayout() {
                     <button
                       type="button"
                       onClick={() => void closeMainWindow()}
-                      className="flex size-8 items-center justify-center rounded-lg border border-white/[0.1] bg-white/[0.05] text-[14px] font-light leading-none text-white/75 hover:bg-rose-500/25 hover:text-rose-100"
+                      className="flex size-8 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.04] text-[14px] font-light leading-none text-white/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-sm transition hover:border-rose-300/25 hover:bg-rose-500/15 hover:text-rose-100"
                       aria-label="Close"
                     >
                       ×
@@ -97,13 +97,11 @@ export default function NarrowPanelLayout() {
                 ) : null}
               </div>
             </div>
-            {pathname === "/stats" ||
-            pathname === "/sessions" ||
-            pathname.startsWith("/session/") ? (
+            {pathname === "/stats" || pathname === "/sessions" ? (
               <div className="no-drag border-t border-white/[0.05] px-3 py-2">
                 <Link
                   to="/"
-                  className="text-[12px] text-white/45 hover:text-white/75"
+                  className="text-[12px] text-white/45 transition hover:text-white/75"
                 >
                   ← Back
                 </Link>

@@ -71,6 +71,16 @@ export function shouldIntervene(score: number): boolean {
   return score >= 5;
 }
 
+export type AttentionTone = "distractor" | "research" | "neutral" | "unknown";
+
+/** For debrief coloring: where attention sat (by domain). */
+export function attentionTone(domain?: string): AttentionTone {
+  if (!domain) return "unknown";
+  if (isDistractorHost(domain)) return "distractor";
+  if (isResearchHintHost(domain)) return "research";
+  return "neutral";
+}
+
 export type InterventionKind = "reactive" | "research";
 
 export function interventionKind(

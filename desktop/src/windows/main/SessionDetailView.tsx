@@ -1,13 +1,24 @@
 import { Link, useParams } from "react-router-dom";
+import SessionAttentionStrip from "@/components/session/SessionAttentionStrip";
+import SessionDetailHeader from "@/components/session/SessionDetailHeader";
 import SessionDetailPanel from "@/components/session/SessionDetailPanel";
+import SessionDomainTrail from "@/components/session/SessionDomainTrail";
+import SessionDriftChart from "@/components/session/SessionDriftChart";
 import SessionSummaryCards from "@/components/session/SessionSummaryCards";
 import SessionTimeline from "@/components/session/SessionTimeline";
 import { useDesktopData } from "@/context/DesktopDataContext";
 import { useChromeBridgeFeed } from "@/hooks/useChromeBridgeFeed";
-import { computeDriftIndex, shouldIntervene } from "@/lib/driftEngine";
-import { liveBehaviorLabel } from "@/lib/liveBehaviorLabel";
+import {
+  buildAttentionSegments,
+  buildDriftSeries,
+  domainHopSequence,
+  type DebriefSessionWindow,
+} from "@/lib/debriefTimeline";
 import { buildLiveSessionDetail, sessionIsLive } from "@/lib/liveSessionDetail";
 import { completedToSessionDetail } from "@/lib/sessionStats";
+
+const navClass =
+  "mb-4 inline-flex text-[12px] font-medium text-white/45 transition hover:text-white/75";
 
 export default function SessionDetailView() {
   const { id } = useParams();
@@ -23,10 +34,7 @@ export default function SessionDetailView() {
     if (!sessionIsLive(feed.session)) {
       return (
         <>
-          <Link
-            to="/sessions"
-            className="mb-5 inline-flex text-[12px] font-medium text-indigo-300/75 hover:text-indigo-200"
-          >
+          <Link to="/sessions" className={navClass}>
             ← Sessions
           </Link>
           <p className="text-[13px] text-white/45">No active session.</p>
@@ -37,42 +45,24 @@ export default function SessionDetailView() {
     if (!detail) {
       return null;
     }
-    const driftLive = computeDriftIndex(feed.events);
-    const hintLive = liveBehaviorLabel(feed.events);
+    const liveWindow: DebriefSessionWindow = {
+      startedAt: feed.session.startedAt,
+    };
+    const liveDriftSeries = buildDriftSeries(liveWindow, feed.events);
+    const liveAttention = buildAttentionSegments(liveWindow, feed.events);
+    const liveHops = domainHopSequence(feed.events);
+
     return (
       <>
-        <Link
-          to="/sessions"
-          className="mb-5 inline-flex text-[12px] font-medium text-indigo-300/75 hover:text-indigo-200"
-        >
+        <Link to="/sessions" className={navClass}>
           ← Sessions
         </Link>
-        <div className="mb-4">
-          <div className="glass-card px-3 py-3">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-white/35">
-              Drift load (rolling)
-            </p>
-            <p
-              className={`mt-1 text-2xl font-semibold tabular-nums tracking-tight ${
-                shouldIntervene(driftLive)
-                  ? "text-amber-200/95"
-                  : "text-white/90"
-              }`}
-            >
-              {driftLive}
-            </p>
-            <p className="mt-1 text-[10px] text-white/35">
-              Rule-based score from recent events; not a medical measure.
-            </p>
-            {hintLive ? (
-              <p className="mt-2 text-[12px] font-medium text-amber-100/85">
-                {hintLive}
-              </p>
-            ) : null}
-          </div>
-        </div>
-        <SessionDetailPanel detail={detail} />
-        <div className="mt-5 space-y-5">
+        <div className="space-y-4">
+          <SessionDetailHeader detail={detail} />
+          <SessionDriftChart data={liveDriftSeries} />
+          <SessionDomainTrail domains={liveHops} />
+          <SessionAttentionStrip segments={liveAttention} />
+          <SessionDetailPanel detail={detail} />
           <SessionSummaryCards
             durationMin={detail.durationMin}
             tasksCompleted={detail.tasksCompleted}
@@ -92,10 +82,7 @@ export default function SessionDetailView() {
   if (!saved) {
     return (
       <>
-        <Link
-          to="/sessions"
-          className="mb-5 inline-flex text-[12px] font-medium text-indigo-300/75 hover:text-indigo-200"
-        >
+        <Link to="/sessions" className={navClass}>
           ← Sessions
         </Link>
         <p className="text-[13px] text-white/45">
@@ -107,17 +94,28 @@ export default function SessionDetailView() {
   }
 
   const detail = completedToSessionDetail(saved);
+  const debriefWindow = {
+    startedAt: saved.startedAt,
+    endedAt: saved.endedAt,
+  };
+  const driftSeries = buildDriftSeries(debriefWindow, saved.events);
+  const attentionSegments = buildAttentionSegments(
+    debriefWindow,
+    saved.events,
+  );
+  const domainHops = domainHopSequence(saved.events);
 
   return (
     <>
-      <Link
-        to="/sessions"
-        className="mb-5 inline-flex text-[12px] font-medium text-indigo-300/75 hover:text-indigo-200"
-      >
+      <Link to="/sessions" className={navClass}>
         ← Sessions
       </Link>
-      <SessionDetailPanel detail={detail} />
-      <div className="mt-5 space-y-5">
+      <div className="space-y-4">
+        <SessionDetailHeader detail={detail} />
+        <SessionDriftChart data={driftSeries} />
+        <SessionDomainTrail domains={domainHops} />
+        <SessionAttentionStrip segments={attentionSegments} />
+        <SessionDetailPanel detail={detail} />
         <SessionSummaryCards
           durationMin={detail.durationMin}
           tasksCompleted={detail.tasksCompleted}

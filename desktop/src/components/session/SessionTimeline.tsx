@@ -1,4 +1,3 @@
-import GlassPanel from "@/components/ui/GlassPanel";
 import SectionHeader from "@/components/ui/SectionHeader";
 import TimelineEventItem from "@/components/session/TimelineEventItem";
 import type { TimelineEvent } from "@/types/domain";
@@ -9,7 +8,7 @@ type Props = {
 
 export default function SessionTimeline({ events }: Props) {
   return (
-    <GlassPanel className="p-5">
+    <div className="glass-card p-5">
       <SectionHeader title="Timeline" />
       <div className="mt-2">
         {events.length === 0 ? (
@@ -28,6 +27,6 @@ export default function SessionTimeline({ events }: Props) {
           ))
         )}
       </div>
-    </GlassPanel>
+    </div>
   );
 }
