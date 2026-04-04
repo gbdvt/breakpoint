@@ -3,13 +3,14 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Link, useOutletContext } from "react-router-dom";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import LiveSessionActivityPanel from "@/components/session/LiveSessionActivityPanel";
+import { useDesktopData } from "@/context/DesktopDataContext";
 import { useChromeBridgeFeed } from "@/hooks/useChromeBridgeFeed";
 import { useVoiceTranscript } from "@/hooks/useVoiceTranscript";
 import type { HomeOutletContext } from "@/lib/homeOutlet";
-import type { Task } from "@/lib/dummyData";
-import { MOCK_HOME_SESSIONS, mockWorkedTodayBaseMin } from "@/lib/dummyData";
 import { formatEstimateShort, formatWorkedToday } from "@/lib/formatDuration";
-import LiveSessionActivityPanel from "@/components/session/LiveSessionActivityPanel";
+import { completedToHomeSummary, workedTodayMinutes } from "@/lib/sessionStats";
+import type { Task } from "@/types/domain";
 import { sessionIsLive } from "@/lib/liveSessionDetail";
 import { isTauri, queueSessionStart } from "@/lib/tauriBridge";
 
@@ -83,13 +84,13 @@ function SettingsIcon({ className }: { className?: string }) {
 
 export default function QueueHomePage() {
   const { openFriends, openSettings } = useOutletContext<HomeOutletContext>();
+  const { tasks, setTasks, completedSessions } = useDesktopData();
   const feed = useChromeBridgeFeed();
   const live = feed && sessionIsLive(feed.session);
 
   const firstName = "Gaspar";
   const [tasksOpen, setTasksOpen] = useState(true);
   const [sessionsOpen, setSessionsOpen] = useState(false);
-  const [tasks, setTasks] = useState<LocalTask[]>([]);
   const [draft, setDraft] = useState("");
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
@@ -106,22 +107,16 @@ export default function QueueHomePage() {
     tasksLeft === 1 ? "1 task left" : `${tasksLeft} tasks left`;
 
   const workedTodayMin = useMemo(() => {
-    const base = mockWorkedTodayBaseMin();
-    if (live && feed?.session) {
-      return (
-        base +
-        Math.max(0, Math.floor((Date.now() - feed.session.startedAt) / 60_000))
-      );
-    }
-    return base;
-  }, [live, feed?.session, workTick]);
+    void workTick;
+    return workedTodayMinutes(completedSessions, feed);
+  }, [completedSessions, feed, workTick]);
 
   const addTask = useCallback(() => {
     const title = draft.trim();
     if (!title) return;
     setDraft("");
     const id = crypto.randomUUID();
-    setTasks((prev) => [
+    setTasks((prev: LocalTask[]) => [
       ...prev,
       {
         id,
@@ -133,16 +128,16 @@ export default function QueueHomePage() {
     ]);
     const est = 20 + Math.floor(Math.random() * 35);
     window.setTimeout(() => {
-      setTasks((prev) =>
+      setTasks((prev: LocalTask[]) =>
         prev.map((t) =>
           t.id === id ? { ...t, estimating: false, estimateMin: est } : t,
         ),
       );
     }, 1600);
-  }, [draft]);
+  }, [draft, setTasks]);
 
   const toggleDone = (id: string) => {
-    setTasks((prev) =>
+    setTasks((prev: LocalTask[]) =>
       prev.map((t) => (t.id === id ? { ...t, done: !t.done } : t)),
     );
   };
@@ -385,25 +380,40 @@ export default function QueueHomePage() {
           </div>
           {sessionsOpen ? (
             <ul className="space-y-2 border-t border-white/[0.06] px-3 py-3">
-              {MOCK_HOME_SESSIONS.map((s) => (
-                <li key={s.id} className="glass-card px-3 py-3">
-                  <p className="text-[11px] font-medium tabular-nums text-white/38">
-                    {s.timeRange}
-                  </p>
-                  <p className="mt-1 text-[14px] font-semibold text-white/[0.94]">
-                    {s.label}
-                  </p>
-                  <p className="mt-2 text-[12px] text-white/48">
-                    <span className="tabular-nums">{s.durationLabel}</span>
-                    <span className="mx-1.5 text-white/18">·</span>
-                    <span>{s.taskCount} tasks</span>
-                    <span className="mx-1.5 text-white/18">·</span>
-                    <span className="font-medium text-rose-300/[0.92]">
-                      {s.distractions} distractions
-                    </span>
-                  </p>
+              {completedSessions.length === 0 ? (
+                <li className="px-1 py-2 text-center text-[12px] text-white/38">
+                  No completed sessions yet. End a work session to see it
+                  here.
                 </li>
-              ))}
+              ) : (
+                completedSessions.slice(0, 12).map((rec) => {
+                  const s = completedToHomeSummary(rec);
+                  return (
+                    <li key={s.id} className="list-none">
+                      <Link
+                        to={`/session/${rec.id}`}
+                        className="glass-card block px-3 py-3 transition hover:bg-white/[0.03]"
+                      >
+                        <p className="text-[11px] font-medium tabular-nums text-white/38">
+                          {s.timeRange}
+                        </p>
+                        <p className="mt-1 text-[14px] font-semibold text-white/[0.94]">
+                          {s.label}
+                        </p>
+                        <p className="mt-2 text-[12px] text-white/48">
+                          <span className="tabular-nums">{s.durationLabel}</span>
+                          <span className="mx-1.5 text-white/18">·</span>
+                          <span>{s.taskCount} tasks</span>
+                          <span className="mx-1.5 text-white/18">·</span>
+                          <span className="font-medium text-rose-300/[0.92]">
+                            {s.distractions} distractions
+                          </span>
+                        </p>
+                      </Link>
+                    </li>
+                  );
+                })
+              )}
             </ul>
           ) : null}
         </div>

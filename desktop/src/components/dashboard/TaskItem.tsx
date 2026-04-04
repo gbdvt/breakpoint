@@ -1,4 +1,4 @@
-import type { Task } from "@/lib/dummyData";
+import type { Task } from "@/types/domain";
 
 type Props = {
   task: Task;

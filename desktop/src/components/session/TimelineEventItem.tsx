@@ -1,4 +1,4 @@
-import type { TimelineEvent } from "@/lib/dummyData";
+import type { TimelineEvent } from "@/types/domain";
 
 type Props = {
   event: TimelineEvent;

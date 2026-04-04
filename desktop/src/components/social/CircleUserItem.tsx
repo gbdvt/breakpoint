@@ -1,4 +1,4 @@
-import type { CircleUser } from "@/lib/dummyData";
+import type { CircleUser } from "@/types/domain";
 
 type Props = {
   user: CircleUser;

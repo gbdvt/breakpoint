@@ -1,7 +1,7 @@
 import GlassPanel from "@/components/ui/GlassPanel";
 import SectionHeader from "@/components/ui/SectionHeader";
 import TaskItem from "@/components/dashboard/TaskItem";
-import type { Task } from "@/lib/dummyData";
+import type { Task } from "@/types/domain";
 
 type Props = {
   tasks: Task[];

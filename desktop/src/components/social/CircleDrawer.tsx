@@ -2,9 +2,7 @@
 
 import { motion } from "framer-motion";
 import GlassPanel from "@/components/ui/GlassPanel";
-import CircleUserItem from "@/components/social/CircleUserItem";
 import ActivityFeed from "@/components/social/ActivityFeed";
-import { DUMMY_CIRCLE } from "@/lib/dummyData";
 
 type Props = {
   onClose: () => void;
@@ -47,11 +45,10 @@ export default function CircleDrawer({ onClose }: Props) {
             </div>
           </div>
           <div className="flex-1 overflow-y-auto px-3 py-3">
-            <div className="space-y-0.5">
-              {DUMMY_CIRCLE.map((u) => (
-                <CircleUserItem key={u.id} user={u} />
-              ))}
-            </div>
+            <p className="px-1 py-6 text-center text-[13px] leading-relaxed text-white/40">
+              No friends added yet. Social features will use your account when
+              you connect a backend.
+            </p>
             <div className="my-4 h-px bg-white/[0.06]" />
             <ActivityFeed />
           </div>

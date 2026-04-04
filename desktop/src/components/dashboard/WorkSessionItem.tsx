@@ -1,4 +1,4 @@
-import type { WorkSessionListItem } from "@/lib/dummyData";
+import type { WorkSessionListItem } from "@/types/domain";
 import { Link } from "react-router-dom";
 
 type Props = {

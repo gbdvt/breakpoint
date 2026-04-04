@@ -12,19 +12,18 @@ export default function FocusScoreCard({ score }: Props) {
         Composite focus score
       </p>
       <div className="mt-3 flex items-end gap-3">
-        <span className="font-mono text-4xl font-semibold tabular-nums tracking-tight text-white">
-          {score}
+        <span className="text-4xl font-semibold tabular-nums tracking-tight text-white">
+          {score === 0 ? "—" : score}
         </span>
-        <span className="pb-2 text-[12px] text-white/40">rolling · demo</span>
+        <span className="pb-2 text-[12px] text-white/40">from your sessions</span>
       </div>
       <ProgressBar
-        value={score}
+        value={score === 0 ? 0 : score}
         className="mt-4"
         fillClassName="bg-gradient-to-r from-emerald-400/85 via-teal-400/75 to-cyan-400/70"
       />
       <p className="mt-3 text-[11px] leading-relaxed text-white/45">
-        Blends session length, recovery speed, and drift density — placeholder
-        until wired to your engine.
+        Heuristic from drift counts across completed sessions on this device.
       </p>
     </GlassPanel>
   );

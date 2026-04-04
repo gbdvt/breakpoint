@@ -1,7 +1,7 @@
 import GlassPanel from "@/components/ui/GlassPanel";
 import SectionHeader from "@/components/ui/SectionHeader";
 import WorkSessionItem from "@/components/dashboard/WorkSessionItem";
-import type { WorkSessionListItem } from "@/lib/dummyData";
+import type { WorkSessionListItem } from "@/types/domain";
 import { Link } from "react-router-dom";
 
 type Props = {

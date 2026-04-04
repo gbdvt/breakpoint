@@ -1,5 +1,5 @@
 import { mapChromeEventsToTimeline } from "@/lib/mapChromeEventsToTimeline";
-import type { SessionDetail } from "@/lib/dummyData";
+import type { SessionDetail } from "@/types/domain";
 import type { ParsedChromeFeed } from "@/types/chromeFeed";
 
 export function sessionIsLive(s: ParsedChromeFeed["session"]): boolean {

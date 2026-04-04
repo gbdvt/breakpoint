@@ -1,7 +1,7 @@
 import GlassPanel from "@/components/ui/GlassPanel";
 import SectionHeader from "@/components/ui/SectionHeader";
 import TimelineEventItem from "@/components/session/TimelineEventItem";
-import type { TimelineEvent } from "@/lib/dummyData";
+import type { TimelineEvent } from "@/types/domain";
 
 type Props = {
   events: TimelineEvent[];

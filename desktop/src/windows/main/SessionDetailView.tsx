@@ -2,15 +2,17 @@ import { Link, useParams } from "react-router-dom";
 import SessionDetailPanel from "@/components/session/SessionDetailPanel";
 import SessionSummaryCards from "@/components/session/SessionSummaryCards";
 import SessionTimeline from "@/components/session/SessionTimeline";
+import { useDesktopData } from "@/context/DesktopDataContext";
 import { useChromeBridgeFeed } from "@/hooks/useChromeBridgeFeed";
-import { DUMMY_SESSION_DETAIL } from "@/lib/dummyData";
 import { computeDriftIndex, shouldIntervene } from "@/lib/driftEngine";
 import { liveBehaviorLabel } from "@/lib/liveBehaviorLabel";
 import { buildLiveSessionDetail, sessionIsLive } from "@/lib/liveSessionDetail";
+import { completedToSessionDetail } from "@/lib/sessionStats";
 
 export default function SessionDetailView() {
   const { id } = useParams();
   const feed = useChromeBridgeFeed();
+  const { completedSessions } = useDesktopData();
 
   if (id === "live") {
     if (!feed) {
@@ -83,15 +85,28 @@ export default function SessionDetailView() {
     );
   }
 
-  const detail =
-    id === DUMMY_SESSION_DETAIL.id
-      ? DUMMY_SESSION_DETAIL
-      : {
-          ...DUMMY_SESSION_DETAIL,
-          id: id ?? "unknown",
-          name: `Session · ${id ?? "?"}`,
-          dateLabel: "—",
-        };
+  const saved = id
+    ? completedSessions.find((s) => s.id === id)
+    : undefined;
+
+  if (!saved) {
+    return (
+      <>
+        <Link
+          to="/sessions"
+          className="mb-5 inline-flex text-[12px] font-medium text-indigo-300/75 hover:text-indigo-200"
+        >
+          ← Sessions
+        </Link>
+        <p className="text-[13px] text-white/45">
+          Session not found. It may have been recorded on another device or
+          cleared from this machine.
+        </p>
+      </>
+    );
+  }
+
+  const detail = completedToSessionDetail(saved);
 
   return (
     <>

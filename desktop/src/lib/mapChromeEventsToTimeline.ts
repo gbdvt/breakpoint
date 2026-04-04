@@ -1,5 +1,5 @@
 import type { ChromeBreakpointEvent } from "@/types/chromeFeed";
-import type { TimelineEvent } from "@/lib/dummyData";
+import type { TimelineEvent } from "@/types/domain";
 
 function labelForType(t: ChromeBreakpointEvent["type"]): string {
   switch (t) {

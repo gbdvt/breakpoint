@@ -1,10 +1,12 @@
 import WorkSessionsPanel from "@/components/dashboard/WorkSessionsPanel";
+import { useDesktopData } from "@/context/DesktopDataContext";
 import { useChromeBridgeFeed } from "@/hooks/useChromeBridgeFeed";
-import { DUMMY_SESSIONS } from "@/lib/dummyData";
 import { distractionCount, sessionIsLive } from "@/lib/liveSessionDetail";
-import type { WorkSessionListItem } from "@/lib/dummyData";
+import { completedToWorkSessionListItem } from "@/lib/sessionStats";
+import type { WorkSessionListItem } from "@/types/domain";
 
 export default function SessionsListPage() {
+  const { completedSessions } = useDesktopData();
   const feed = useChromeBridgeFeed();
   const liveRow: WorkSessionListItem | null =
     feed && sessionIsLive(feed.session) && feed.session
@@ -24,10 +26,17 @@ export default function SessionsListPage() {
         }
       : null;
 
-  const sessions = [...(liveRow ? [liveRow] : []), ...DUMMY_SESSIONS];
+  const past = completedSessions.map(completedToWorkSessionListItem);
+  const sessions = [...(liveRow ? [liveRow] : []), ...past];
 
   return (
     <div className="space-y-3">
+      {sessions.length === 0 ? (
+        <p className="px-1 py-4 text-center text-[13px] text-white/40">
+          No sessions yet. Start a work session from home, then end it to
+          build history.
+        </p>
+      ) : null}
       <WorkSessionsPanel sessions={sessions} />
     </div>
   );

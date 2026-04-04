@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import GlassPanel from "@/components/ui/GlassPanel";
-import type { Project } from "@/lib/dummyData";
+import type { Project } from "@/types/domain";
 
 type Props = {
   projects: Project[];

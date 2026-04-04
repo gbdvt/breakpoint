@@ -1,6 +1,6 @@
 import GlassPanel from "@/components/ui/GlassPanel";
 import ProgressBar from "@/components/ui/ProgressBar";
-import type { SessionDetail } from "@/lib/dummyData";
+import type { SessionDetail } from "@/types/domain";
 
 type Props = {
   detail: SessionDetail;
