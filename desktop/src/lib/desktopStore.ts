@@ -20,10 +20,12 @@ export type CompletedSessionRecord = {
 export type DesktopPersisted = {
   tasks: Task[];
   completedSessions: CompletedSessionRecord[];
+  /** Free-form notes for task time estimation (study habits, sites, lecture lengths, etc.). */
+  taskContextNote: string;
 };
 
 export function defaultDesktopPersisted(): DesktopPersisted {
-  return { tasks: [], completedSessions: [] };
+  return { tasks: [], completedSessions: [], taskContextNote: "" };
 }
 
 export function loadDesktopStore(): DesktopPersisted {
@@ -36,6 +38,10 @@ export function loadDesktopStore(): DesktopPersisted {
       completedSessions: Array.isArray(p.completedSessions)
         ? p.completedSessions
         : [],
+      taskContextNote:
+        typeof p.taskContextNote === "string"
+          ? p.taskContextNote.slice(0, 8000)
+          : "",
     };
   } catch {
     return defaultDesktopPersisted();

@@ -4,7 +4,7 @@ import { AnimatePresence } from "framer-motion";
 import { Link, useLocation } from "react-router-dom";
 import type { ReactNode } from "react";
 import { useState } from "react";
-import CircleDrawer from "@/components/social/CircleDrawer";
+import ContextSheet from "@/components/context/ContextSheet";
 import GlassPanel from "@/components/ui/GlassPanel";
 import {
   closeFloatingWindow,
@@ -29,7 +29,7 @@ export default function AppShell({
   userFirstName = "Gaspar",
 }: Props) {
   const pathname = useLocation().pathname;
-  const [circleOpen, setCircleOpen] = useState(false);
+  const [contextOpen, setContextOpen] = useState(false);
 
   return (
     <div className="relative min-h-screen overflow-x-hidden font-[family-name:var(--font-sans)]">
@@ -119,10 +119,10 @@ export default function AppShell({
 
           <button
             type="button"
-            onClick={() => setCircleOpen(true)}
+            onClick={() => setContextOpen(true)}
             className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.04] py-2.5 text-[12px] font-medium text-white/70 transition hover:bg-white/[0.07] hover:text-white"
           >
-            Your Circle
+            Task context
             <span className="text-white/35">⌁</span>
           </button>
         </aside>
@@ -131,8 +131,8 @@ export default function AppShell({
       </div>
 
       <AnimatePresence>
-        {circleOpen ? (
-          <CircleDrawer onClose={() => setCircleOpen(false)} />
+        {contextOpen ? (
+          <ContextSheet onClose={() => setContextOpen(false)} />
         ) : null}
       </AnimatePresence>
 

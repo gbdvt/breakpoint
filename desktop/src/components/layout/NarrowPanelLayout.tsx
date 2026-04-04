@@ -3,7 +3,7 @@
 import { AnimatePresence } from "framer-motion";
 import { Outlet } from "react-router-dom";
 import { useState } from "react";
-import CircleDrawer from "@/components/social/CircleDrawer";
+import ContextSheet from "@/components/context/ContextSheet";
 import SettingsSheet from "@/components/home/SettingsSheet";
 import PanelSessionDock from "@/components/session/PanelSessionDock";
 import type { HomeOutletContext } from "@/lib/homeOutlet";
@@ -12,11 +12,11 @@ import { isTauri } from "@/lib/tauriBridge";
 export default function NarrowPanelLayout() {
   const tauri = isTauri();
 
-  const [circleOpen, setCircleOpen] = useState(false);
+  const [contextOpen, setContextOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const outletContext: HomeOutletContext = {
-    openFriends: () => setCircleOpen(true),
+    openContext: () => setContextOpen(true),
     openSettings: () => setSettingsOpen(true),
   };
 
@@ -64,8 +64,8 @@ export default function NarrowPanelLayout() {
       </div>
 
       <AnimatePresence>
-        {circleOpen ? (
-          <CircleDrawer onClose={() => setCircleOpen(false)} />
+        {contextOpen ? (
+          <ContextSheet onClose={() => setContextOpen(false)} />
         ) : null}
       </AnimatePresence>
       <AnimatePresence>

@@ -11,6 +11,14 @@ const STORAGE_SESSION = "breakpoint_active_session";
 const STORAGE_EVENTS = "breakpoint_events";
 /** Shared payload for in-page overlay.js (chrome.storage.local). */
 const STORAGE_LAST_DRIFT_UI = "breakpoint_last_drift_ui";
+/** Episode anchor for overlay: same 3s→urgent + 32s teardown across distractor tab switches. */
+const STORAGE_OVERLAY_EPISODE = "breakpoint_overlay_episode";
+
+const QUEUE_TOTAL_CAP_MIN = 180;
+/** Drop stale episode so a long gap starts a fresh countdown. */
+const OVERLAY_EPISODE_MAX_MS = 40_000;
+/** Any new tab adds at least this (unknown URL or generic host) so totals move with real opens. */
+const TAB_CREATE_GENERIC_MIN = 2;
 
 const DISTRACTOR_ROOTS = [
   "youtube.com",
@@ -111,11 +119,63 @@ function shouldIntervene(score) {
   return score >= 5;
 }
 
+/**
+ * Per TAB_CREATE — aligned with breakpoint/lib/researchQueueEstimate.ts for known hosts;
+ * generic/empty domain still counts TAB_CREATE_GENERIC_MIN so session totals track every open.
+ */
+function tabCreateQueueMinutes(domain) {
+  const d = domain ? normalizeHost(String(domain)) : "";
+  if (!d) return TAB_CREATE_GENERIC_MIN;
+  if (d.includes("youtube") || d === "youtube.com" || d.endsWith(".youtube.com"))
+    return 7;
+  if (isDistractorHost(d)) return 5;
+  if (isResearchHintHost(d)) return 4;
+  return TAB_CREATE_GENERIC_MIN;
+}
+
 /** @param {unknown[]} items */
-function newBatchIndicatesDistractorFocus(items) {
+function estimateQueueDeltaFromBatch(items) {
+  if (!Array.isArray(items)) return 0;
+  let sum = 0;
+  for (const e of items) {
+    if (!e || typeof e !== "object" || e.type !== "TAB_CREATE") continue;
+    sum += tabCreateQueueMinutes(e.domain);
+  }
+  return Math.min(Math.round(sum), QUEUE_TOTAL_CAP_MIN);
+}
+
+/** Session-wide hidden-load estimate from stored events. */
+function estimateQueueTotalFromEvents(events) {
+  if (!Array.isArray(events)) return 0;
+  const sorted = [...events].sort(
+    (a, b) => (a.timestamp || 0) - (b.timestamp || 0),
+  );
+  let total = 0;
+  for (const e of sorted) {
+    if (!e || typeof e !== "object") continue;
+    if (e.type === "TAB_CREATE") {
+      total += tabCreateQueueMinutes(e.domain);
+    }
+    const d = e.domain ? normalizeHost(String(e.domain)) : "";
+    if (e.type === "NAVIGATION") {
+      const url = e.url ? String(e.url) : "";
+      if (url.includes("youtube.com/watch")) total += 6;
+      else if (d && isResearchHintHost(d)) total += 3;
+    }
+  }
+  return Math.min(Math.round(total), QUEUE_TOTAL_CAP_MIN);
+}
+
+/**
+ * True when this batch should refresh badge + overlay while already in the drift band.
+ * Includes TAB_CREATE so queue totals/delta update when you open tabs (not only on tab switch).
+ * @param {unknown[]} items
+ */
+function newBatchTriggersDriftUi(items) {
   for (const e of items) {
     if (!e || typeof e !== "object") continue;
     if (e.type === "DISTRACTOR_OPEN") return true;
+    if (e.type === "TAB_CREATE") return true;
     if (
       e.type === "TAB_SWITCH" &&
       e.domain &&
@@ -246,7 +306,7 @@ async function setDriftBadge() {
   }
 }
 
-function buildDriftPayload(_session, events) {
+function buildDriftPayload(_session, events, newItems) {
   const kind = interventionKind(events);
   const last = events[events.length - 1];
   const rawDomain =
@@ -264,7 +324,12 @@ function buildDriftPayload(_session, events) {
   }
   if (!siteLabel) siteLabel = "This tab";
 
-  return { kind, siteLabel };
+  const queueDeltaMin = estimateQueueDeltaFromBatch(
+    Array.isArray(newItems) ? newItems : [],
+  );
+  const queueTotalMin = estimateQueueTotalFromEvents(events);
+
+  return { kind, siteLabel, queueDeltaMin, queueTotalMin };
 }
 
 /**
@@ -311,8 +376,40 @@ async function chooseOverlayTabId(triggerTabId) {
  * Persist payload and inject the bottom-right in-page card into the best tab
  * (focused distractor, else last distractor tab, else trigger/active).
  */
-async function showDriftIntervention(session, events, triggerTabId) {
-  const payload = buildDriftPayload(session, events);
+/**
+ * @param {{ crossed?: boolean, newItems?: unknown[] }} [opts]
+ */
+async function showDriftIntervention(session, events, triggerTabId, opts) {
+  const crossed = opts?.crossed === true;
+  const newItems = Array.isArray(opts?.newItems) ? opts.newItems : [];
+  const now = Date.now();
+
+  const prevEp = (await chrome.storage.local.get(STORAGE_OVERLAY_EPISODE))[
+    STORAGE_OVERLAY_EPISODE
+  ];
+  const epValid =
+    prevEp &&
+    typeof prevEp.anchorAt === "number" &&
+    typeof prevEp.settleEndAt === "number" &&
+    now - prevEp.anchorAt < OVERLAY_EPISODE_MAX_MS;
+
+  let anchorAt;
+  let settleEndAt;
+  if (crossed || !epValid) {
+    anchorAt = now;
+    settleEndAt = now + 3000;
+  } else {
+    anchorAt = prevEp.anchorAt;
+    settleEndAt = prevEp.settleEndAt;
+  }
+
+  await chrome.storage.local.set({
+    [STORAGE_OVERLAY_EPISODE]: { anchorAt, settleEndAt },
+  });
+
+  const payload = buildDriftPayload(session, events, newItems);
+  payload.anchorAt = anchorAt;
+  payload.settleEndAt = settleEndAt;
   await chrome.storage.local.set({ [STORAGE_LAST_DRIFT_UI]: payload });
 
   const tabId = await chooseOverlayTabId(triggerTabId);
@@ -331,7 +428,7 @@ async function showDriftIntervention(session, events, triggerTabId) {
 /**
  * Keeps badge + drift UI aligned with the rolling score:
  * - Badge clears when score falls below threshold.
- * - Overlay when you cross into the band OR each time you land on a distractor tab while still in band.
+ * - Overlay when you cross into the band, land on a distractor tab, or open a new tab while still in band.
  */
 async function syncDriftIntervention(events, session, triggerTabId, newItems) {
   const score = computeDriftIndex(events);
@@ -340,18 +437,22 @@ async function syncDriftIntervention(events, session, triggerTabId, newItems) {
   if (!nowBand) {
     if (prevShouldIntervene) await clearBadge();
     prevShouldIntervene = false;
+    await chrome.storage.local.remove(STORAGE_OVERLAY_EPISODE);
     return;
   }
 
   const crossed = !prevShouldIntervene;
   prevShouldIntervene = true;
 
-  const focusOnDistractor =
-    Array.isArray(newItems) && newBatchIndicatesDistractorFocus(newItems);
+  const driftUiFromBatch =
+    Array.isArray(newItems) && newBatchTriggersDriftUi(newItems);
 
-  if (crossed || focusOnDistractor) {
+  if (crossed || driftUiFromBatch) {
     await setDriftBadge();
-    await showDriftIntervention(session, events, triggerTabId);
+    await showDriftIntervention(session, events, triggerTabId, {
+      crossed,
+      newItems: Array.isArray(newItems) ? newItems : [],
+    });
   }
 }
 
@@ -414,7 +515,10 @@ async function handleSessionStart(session) {
   resetTrackingGuards();
   await clearBadge();
   await saveState(session, []);
-  await chrome.storage.local.remove(STORAGE_LAST_DRIFT_UI);
+  await chrome.storage.local.remove([
+    STORAGE_LAST_DRIFT_UI,
+    STORAGE_OVERLAY_EPISODE,
+  ]);
   broadcastState(session, []);
 
   const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -432,6 +536,7 @@ async function handleSessionEnd() {
   }
   resetTrackingGuards();
   await clearBadge();
+  await chrome.storage.local.remove(STORAGE_OVERLAY_EPISODE);
   return { ok: true };
 }
 
@@ -441,6 +546,7 @@ async function handleClearAll() {
     STORAGE_SESSION,
     STORAGE_EVENTS,
     STORAGE_LAST_DRIFT_UI,
+    STORAGE_OVERLAY_EPISODE,
   ]);
   broadcastState(null, []);
   await clearBadge();

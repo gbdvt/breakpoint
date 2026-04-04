@@ -11,9 +11,39 @@ import { formatEstimateShort, formatWorkedToday } from "@/lib/formatDuration";
 import { completedToHomeSummary, workedTodayMinutes } from "@/lib/sessionStats";
 import type { Task } from "@/types/domain";
 import { sessionIsLive } from "@/lib/liveSessionDetail";
+import {
+  fallbackEstimateMinutes,
+  fetchTaskEstimate,
+  midpointMinutes,
+} from "@/lib/taskEstimate";
 import { isTauri, queueSessionStart } from "@/lib/tauriBridge";
 
 type LocalTask = Task & { estimating?: boolean };
+
+/** Fills toward ~90% while waiting on the network; no loop — tied to real elapsed time. */
+function EstimateProgressBar() {
+  const [pct, setPct] = useState(0);
+  useEffect(() => {
+    const t0 = Date.now();
+    const id = window.setInterval(() => {
+      const elapsed = Date.now() - t0;
+      const p = Math.min(90, 90 * (1 - Math.exp(-elapsed / 2200)));
+      setPct(p);
+    }, 48);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <div className="mt-2.5 h-1 overflow-hidden rounded-full bg-white/[0.07]">
+      <div
+        className="h-full rounded-full bg-gradient-to-r from-sky-400/85 to-indigo-400/75"
+        style={{
+          width: `${pct}%`,
+          transition: "width 80ms linear",
+        }}
+      />
+    </div>
+  );
+}
 
 function greetingLabel(firstName: string): string {
   const h = new Date().getHours();
@@ -40,7 +70,7 @@ function CalendarIcon({ className }: { className?: string }) {
   );
 }
 
-function FriendsIcon({ className }: { className?: string }) {
+function ContextIcon({ className }: { className?: string }) {
   return (
     <svg
       className={className}
@@ -52,7 +82,7 @@ function FriendsIcon({ className }: { className?: string }) {
       <path
         strokeLinecap="round"
         strokeLinejoin="round"
-        d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z"
+        d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v15.128A9.757 9.757 0 0118 15.75c0-1.649-.402-3.204-1.117-4.55M12 6.042A8.967 8.967 0 0118 3.75c1.052 0 2.062.18 3 .512v15.128a9.757 9.757 0 01-4.5 1.185c-1.649 0-3.204-.402-4.55-1.117"
       />
     </svg>
   );
@@ -82,8 +112,9 @@ function SettingsIcon({ className }: { className?: string }) {
 }
 
 export default function QueueHomePage() {
-  const { openFriends, openSettings } = useOutletContext<HomeOutletContext>();
-  const { tasks, setTasks, completedSessions } = useDesktopData();
+  const { openContext, openSettings } = useOutletContext<HomeOutletContext>();
+  const { tasks, setTasks, completedSessions, taskContextNote } =
+    useDesktopData();
   const feed = useChromeBridgeFeed();
   const live = feed && sessionIsLive(feed.session);
 
@@ -110,7 +141,7 @@ export default function QueueHomePage() {
     return workedTodayMinutes(completedSessions, feed);
   }, [completedSessions, feed, workTick]);
 
-  const addTask = useCallback(() => {
+  const addTask = useCallback(async () => {
     const title = draft.trim();
     if (!title) return;
     setDraft("");
@@ -125,15 +156,22 @@ export default function QueueHomePage() {
         project: "No project",
       },
     ]);
-    const est = 20 + Math.floor(Math.random() * 35);
-    window.setTimeout(() => {
-      setTasks((prev: LocalTask[]) =>
-        prev.map((t) =>
-          t.id === id ? { ...t, estimating: false, estimateMin: est } : t,
-        ),
-      );
-    }, 1600);
-  }, [draft, setTasks]);
+
+    const est = await fetchTaskEstimate({
+      goal: title,
+      taskContextNote,
+    });
+
+    const estimateMin = est.ok
+      ? midpointMinutes(est)
+      : fallbackEstimateMinutes(title);
+
+    setTasks((prev: LocalTask[]) =>
+      prev.map((t) =>
+        t.id === id ? { ...t, estimating: false, estimateMin } : t,
+      ),
+    );
+  }, [draft, setTasks, taskContextNote]);
 
   const toggleDone = (id: string) => {
     setTasks((prev: LocalTask[]) =>
@@ -185,11 +223,11 @@ export default function QueueHomePage() {
             <div className="no-drag flex shrink-0 gap-1.5 pt-0.5">
               <button
                 type="button"
-                onClick={openFriends}
+                onClick={openContext}
                 className="flex size-9 items-center justify-center rounded-xl border border-cyan-100/[0.08] bg-white/[0.04] text-white/55 transition hover:border-cyan-100/[0.12] hover:bg-white/[0.07] hover:text-white/85"
-                aria-label="Friends"
+                aria-label="Task context"
               >
-                <FriendsIcon className="size-[18px]" />
+                <ContextIcon className="size-[18px]" />
               </button>
               <button
                 type="button"
@@ -261,20 +299,7 @@ export default function QueueHomePage() {
                               {t.project ?? "No project"}
                             </span>
                           </div>
-                          {t.estimating ? (
-                            <div className="mt-2.5 h-0.5 overflow-hidden rounded-full bg-white/[0.07]">
-                              <motion.div
-                                className="h-full rounded-full bg-gradient-to-r from-sky-400/80 to-indigo-400/70"
-                                initial={{ width: "12%" }}
-                                animate={{ width: ["12%", "88%", "40%", "70%"] }}
-                                transition={{
-                                  duration: 1.5,
-                                  repeat: Infinity,
-                                  ease: "easeInOut",
-                                }}
-                              />
-                            </div>
-                          ) : null}
+                          {t.estimating ? <EstimateProgressBar /> : null}
                         </div>
                       </div>
                     </motion.li>

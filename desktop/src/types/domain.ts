@@ -6,6 +6,8 @@ export type Task = {
   done: boolean;
   project?: string;
   estimateMin?: number;
+  /** Transient UI while waiting for an estimate (not required to persist). */
+  estimating?: boolean;
 };
 
 export type WorkSessionListItem = {

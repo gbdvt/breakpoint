@@ -1,4 +1,4 @@
 export type HomeOutletContext = {
-  openFriends: () => void;
+  openContext: () => void;
   openSettings: () => void;
 };

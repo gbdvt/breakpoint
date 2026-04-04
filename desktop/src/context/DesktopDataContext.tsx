@@ -24,6 +24,8 @@ type DesktopDataContextValue = {
   tasks: Task[];
   setTasks: React.Dispatch<React.SetStateAction<Task[]>>;
   completedSessions: CompletedSessionRecord[];
+  taskContextNote: string;
+  setTaskContextNote: (note: string) => void;
 };
 
 const DesktopDataContext = createContext<DesktopDataContextValue | null>(null);
@@ -63,8 +65,14 @@ export function DesktopDataProvider({ children }: { children: React.ReactNode })
           tasks: typeof fn === "function" ? fn(d.tasks) : fn,
         })),
       completedSessions: data.completedSessions,
+      taskContextNote: data.taskContextNote ?? "",
+      setTaskContextNote: (note) =>
+        setData((d) => ({
+          ...d,
+          taskContextNote: note.slice(0, 8000),
+        })),
     }),
-    [data.tasks, data.completedSessions],
+    [data.tasks, data.completedSessions, data.taskContextNote],
   );
 
   return (

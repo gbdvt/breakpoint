@@ -1,6 +1,7 @@
 /**
- * Drift nudge: bottom-left glass pill — short countdown (0:03→0:01) then red accent.
- * No buttons; tab hidden dismisses; auto-dismiss after 32s.
+ * Drift nudge: bottom-left glass pill — settle countdown (from background episode) then red accent.
+ * Shows queue delta (+Xm from new tabs in this batch) and session total (~Ym).
+ * No buttons; tab hidden dismisses; auto-dismiss 32s from episode anchor.
  */
 (function () {
   const ROOT_ID = "breakpoint-drift-overlay-root";
@@ -34,6 +35,29 @@
       kind === "research"
         ? `${siteLabel} — pace check`
         : `${siteLabel} — distraction logged`;
+
+    const queueDeltaMin =
+      typeof payload.queueDeltaMin === "number" && payload.queueDeltaMin > 0
+        ? Math.round(payload.queueDeltaMin)
+        : 0;
+    const queueTotalMin =
+      typeof payload.queueTotalMin === "number"
+        ? Math.max(0, Math.round(payload.queueTotalMin))
+        : 0;
+
+    const settleEndAt =
+      typeof payload.settleEndAt === "number"
+        ? payload.settleEndAt
+        : Date.now() + 3000;
+    const anchorAt =
+      typeof payload.anchorAt === "number" ? payload.anchorAt : Date.now();
+
+    function queueCaption() {
+      const parts = [];
+      if (queueDeltaMin > 0) parts.push(`+${queueDeltaMin}m`);
+      parts.push(`~${queueTotalMin}m total`);
+      return parts.join(" · ");
+    }
 
     document.getElementById(ROOT_ID)?.remove();
 
@@ -113,9 +137,14 @@
         opacity: 1;
         width: 15px;
       }
-      .main {
+      .main-col {
         flex: 1;
         min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .main {
         font-size: 12px;
         font-weight: 600;
         line-height: 1.35;
@@ -123,6 +152,16 @@
       }
       .pill:not(.urgent) .main {
         color: rgba(51, 65, 85, 0.88);
+      }
+      .queue-line {
+        font-size: 11px;
+        font-weight: 500;
+        line-height: 1.3;
+        color: rgba(71, 85, 105, 0.78);
+        letter-spacing: 0.02em;
+      }
+      .pill.urgent .queue-line {
+        color: rgba(120, 53, 69, 0.82);
       }
     `;
 
@@ -138,21 +177,34 @@
     icWrap.className = "ic-wrap";
     icWrap.innerHTML = WARN_SVG;
 
+    const mainCol = document.createElement("div");
+    mainCol.className = "main-col";
     const mainEl = document.createElement("span");
     mainEl.className = "main";
+    const queueEl = document.createElement("div");
+    queueEl.className = "queue-line";
+    queueEl.textContent = queueCaption();
+    mainCol.append(mainEl, queueEl);
 
-    let sec = 3;
+    function remainingSec() {
+      return Math.max(0, Math.ceil((settleEndAt - Date.now()) / 1000));
+    }
+
+    let urgent = Date.now() >= settleEndAt;
     function syncCopy() {
-      timerEl.textContent = `0:${pad2(sec)}`;
-      if (sec > 0) {
+      const r = urgent ? 0 : remainingSec();
+      timerEl.textContent = `0:${pad2(r)}`;
+      if (!urgent) {
         mainEl.textContent = siteLabel;
       } else {
         mainEl.textContent = urgentLine;
       }
+      queueEl.textContent = queueCaption();
     }
     syncCopy();
+    if (urgent) pill.classList.add("urgent");
 
-    pill.append(timerEl, icWrap, mainEl);
+    pill.append(timerEl, icWrap, mainCol);
 
     let tornDown = false;
     let intervalId = 0;
@@ -180,19 +232,20 @@
 
     document.addEventListener("visibilitychange", onVisibility);
 
-    intervalId = window.setInterval(() => {
-      sec -= 1;
-      if (sec > 0) {
+    if (!urgent) {
+      intervalId = window.setInterval(() => {
+        if (Date.now() >= settleEndAt) {
+          window.clearInterval(intervalId);
+          intervalId = 0;
+          urgent = true;
+          pill.classList.add("urgent");
+        }
         syncCopy();
-      } else {
-        window.clearInterval(intervalId);
-        intervalId = 0;
-        pill.classList.add("urgent");
-        syncCopy();
-      }
-    }, 1000);
+      }, 250);
+    }
 
-    autoTimeout = window.setTimeout(teardown, 32000);
+    const untilTeardown = Math.max(0, anchorAt + 32000 - Date.now());
+    autoTimeout = window.setTimeout(teardown, untilTeardown);
 
     shadow.append(style, pill);
 
