@@ -8,7 +8,10 @@ import { useChromeBridgeFeed } from "@/hooks/useChromeBridgeFeed";
 import { useVoiceTranscript } from "@/hooks/useVoiceTranscript";
 import type { HomeOutletContext } from "@/lib/homeOutlet";
 import { formatEstimateShort, formatWorkedToday } from "@/lib/formatDuration";
-import { completedToHomeSummary, workedTodayMinutes } from "@/lib/sessionStats";
+import {
+  completedToHomeSummary,
+  workedTodayMinutes,
+} from "@/lib/sessionStats";
 import type { Task } from "@/types/domain";
 import { sessionIsLive } from "@/lib/liveSessionDetail";
 import {
@@ -23,6 +26,12 @@ import {
 import { isTauri, queueSessionStart } from "@/lib/tauriBridge";
 
 type LocalTask = Task & { estimating?: boolean };
+
+/** Placeholder home metrics until real session aggregates feel good enough to ship. */
+const DEMO_HOME_FOCUS_STRIP = {
+  focusScore: 81,
+  medianFirstDriftMin: 12,
+} as const;
 
 /** Fills toward ~90% while waiting on the network; no loop — tied to real elapsed time. */
 function EstimateProgressBar() {
@@ -146,6 +155,8 @@ export default function QueueHomePage() {
     void workTick;
     return workedTodayMinutes(completedSessions, feed);
   }, [completedSessions, feed, workTick]);
+
+  const driftStrip = DEMO_HOME_FOCUS_STRIP;
 
   const addTask = useCallback(async () => {
     const title = draft.trim();
@@ -336,6 +347,32 @@ export default function QueueHomePage() {
               >
                 <SettingsIcon className="size-[18px]" />
               </button>
+            </div>
+          </div>
+          <div className="no-drag mt-3 flex items-end justify-between gap-4 rounded-2xl border border-cyan-100/[0.1] bg-gradient-to-br from-white/[0.07] to-white/[0.02] px-3.5 py-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.07)]">
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/45">
+                Focus
+                <span className="ml-1.5 font-normal normal-case tracking-normal text-white/28">
+                  · demo
+                </span>
+              </p>
+              <p className="mt-1 text-[30px] font-semibold tabular-nums leading-none tracking-tight">
+                <span className="bg-gradient-to-r from-sky-200 via-cyan-200 to-indigo-200 bg-clip-text text-transparent">
+                  {driftStrip.focusScore}
+                </span>
+              </p>
+              <p className="mt-1 text-[10px] font-medium text-white/32">
+                avg · recent sessions
+              </p>
+            </div>
+            <div className="shrink-0 pb-0.5 text-right">
+              <p className="text-[16px] font-semibold tabular-nums text-white/[0.88]">
+                ~{driftStrip.medianFirstDriftMin}m
+              </p>
+              <p className="mt-1 max-w-[132px] text-right text-[10px] font-medium leading-snug text-white/40">
+                median before first drift
+              </p>
             </div>
           </div>
           <p className="mt-2 text-[13px] font-medium text-white/42">

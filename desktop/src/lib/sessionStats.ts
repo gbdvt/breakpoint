@@ -1,7 +1,9 @@
+import { computeDriftIndex, shouldIntervene } from "@/lib/driftEngine";
 import { mapChromeEventsToTimeline } from "@/lib/mapChromeEventsToTimeline";
 import { distractionCount } from "@/lib/liveSessionDetail";
 import { formatWorkedToday } from "@/lib/formatDuration";
 import type { CompletedSessionRecord } from "@/lib/desktopStore";
+import type { ChromeBreakpointEvent } from "@/types/chromeFeed";
 import type {
   HomeSessionSummary,
   SessionDetail,
@@ -116,6 +118,87 @@ export function workedTodayMinutes(
     m += Math.max(0, (Date.now() - Math.max(st, t0)) / 60_000);
   }
   return Math.floor(m);
+}
+
+function medianRounded(nums: number[]): number | null {
+  if (nums.length === 0) return null;
+  const s = [...nums].sort((a, b) => a - b);
+  const mid = Math.floor(s.length / 2);
+  const v =
+    s.length % 2 === 1 ? s[mid]! : (s[mid - 1]! + s[mid]!) / 2;
+  return Math.round(v);
+}
+
+/** Minutes from session start until drift crosses intervention threshold. */
+export function minutesToFirstInterventionDrift(
+  events: ChromeBreakpointEvent[],
+  sessionStartedAt: number,
+): number | null {
+  if (events.length === 0) return null;
+  const sorted = [...events].sort((a, b) => a.timestamp - b.timestamp);
+  for (let i = 0; i < sorted.length; i++) {
+    const score = computeDriftIndex(sorted.slice(0, i + 1));
+    if (shouldIntervene(score)) {
+      const min = (sorted[i].timestamp - sessionStartedAt) / 60_000;
+      return Math.max(0, Math.round(min * 10) / 10);
+    }
+  }
+  return null;
+}
+
+export type HomeDriftStrip = {
+  /** Higher = calmer attention (from avg drift index: live = now, idle = recent session ends). */
+  focusScore: number | null;
+  /** Median minutes until first intervention-level drift (recent sessions only). */
+  medianFirstDriftMin: number | null;
+};
+
+const HOME_DRIFT_RECENT_SESSIONS = 20;
+
+/** Maps drift load (0 ≈ steady, 10 ≈ heavy) to a level-up style focus score. */
+export function homeFocusScoreFromDrift(drift: number): number {
+  return Math.max(38, Math.min(100, Math.round(100 - drift * 6.2)));
+}
+
+/**
+ * Home header metrics: focus score + median time before first elevated drift.
+ */
+export function computeHomeDriftStrip(
+  completedSessions: CompletedSessionRecord[],
+  feed: ParsedChromeFeed | null,
+): HomeDriftStrip {
+  const live =
+    feed?.session &&
+    !feed.session.endedAt &&
+    feed.events.length > 0;
+
+  let avgDrift: number | null = null;
+  if (live) {
+    avgDrift = computeDriftIndex(feed!.events);
+  } else {
+    const endScores: number[] = [];
+    for (const s of completedSessions.slice(0, HOME_DRIFT_RECENT_SESSIONS)) {
+      if (s.events?.length) endScores.push(computeDriftIndex(s.events));
+    }
+    avgDrift =
+      endScores.length > 0
+        ? Math.round(
+            endScores.reduce((a, b) => a + b, 0) / endScores.length,
+          )
+        : null;
+  }
+
+  const firstDriftSamples: number[] = [];
+  for (const s of completedSessions.slice(0, HOME_DRIFT_RECENT_SESSIONS)) {
+    if (!s.events?.length) continue;
+    const m = minutesToFirstInterventionDrift(s.events, s.startedAt);
+    if (m !== null) firstDriftSamples.push(m);
+  }
+
+  return {
+    focusScore: avgDrift === null ? null : homeFocusScoreFromDrift(avgDrift),
+    medianFirstDriftMin: medianRounded(firstDriftSamples),
+  };
 }
 
 export type StatsBundle = {
