@@ -16,6 +16,10 @@ import {
   fetchTaskEstimate,
   midpointMinutes,
 } from "@/lib/taskEstimate";
+import {
+  completeRootlyActionItem,
+  importRootlyActionItems,
+} from "@/lib/rootlySync";
 import { isTauri, queueSessionStart } from "@/lib/tauriBridge";
 
 type LocalTask = Task & { estimating?: boolean };
@@ -125,6 +129,8 @@ export default function QueueHomePage() {
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
   const [workTick, setWorkTick] = useState(0);
+  const [rootlyBusy, setRootlyBusy] = useState(false);
+  const [rootlyMessage, setRootlyMessage] = useState<string | null>(null);
   const { listen, listening } = useVoiceTranscript();
 
   useEffect(() => {
@@ -173,10 +179,104 @@ export default function QueueHomePage() {
   }, [draft, setTasks, taskContextNote]);
 
   const toggleDone = (id: string) => {
-    setTasks((prev: LocalTask[]) =>
-      prev.map((t) => (t.id === id ? { ...t, done: !t.done } : t)),
-    );
+    setTasks((prev: LocalTask[]) => {
+      const cur = prev.find((t) => t.id === id);
+      if (!cur) return prev;
+      const nextDone = !cur.done;
+      if (nextDone && cur.rootly?.actionItemId) {
+        void completeRootlyActionItem(cur.rootly.actionItemId).then((r) => {
+          if (!r.ok) {
+            setRootlyMessage(`Rootly sync: ${r.error}`);
+            window.setTimeout(() => setRootlyMessage(null), 8000);
+          }
+        });
+      }
+      return prev.map((t) => (t.id === id ? { ...t, done: nextDone } : t));
+    });
   };
+
+  const syncRootlyInTasks = useCallback(async () => {
+    setRootlyBusy(true);
+    setRootlyMessage(null);
+    try {
+      const r = await importRootlyActionItems();
+      if (!r.ok) {
+        setRootlyMessage(r.error);
+        return;
+      }
+      if (r.items.length === 0) {
+        setRootlyMessage(
+          "No incidents or tasks returned. Check ROOTLY_API_KEY, remove wrong ROOTLY_IMPORT_INCIDENT_STATUS / ROOTLY_IMPORT_INCIDENT_IDS filters, and try again.",
+        );
+        window.setTimeout(() => setRootlyMessage(null), 7000);
+        return;
+      }
+
+      let pairs: {
+        item: (typeof r.items)[number];
+        task: LocalTask;
+      }[] = [];
+
+      setTasks((prev) => {
+        const have = new Set(
+          prev
+            .filter((t) => t.rootly?.actionItemId)
+            .map((t) => t.rootly!.actionItemId),
+        );
+        const fresh = r.items.filter((it) => !have.has(it.actionItemId));
+        if (fresh.length === 0) return prev;
+        pairs = fresh.map((it) => ({
+          item: it,
+          task: {
+            id: crypto.randomUUID(),
+            title: it.title,
+            done: false,
+            estimating: true as const,
+            rootly: {
+              actionItemId: it.actionItemId,
+              ...(it.incidentId ? { incidentId: it.incidentId } : {}),
+            },
+          },
+        }));
+        return [...prev, ...pairs.map((p) => p.task)];
+      });
+
+      if (pairs.length === 0) {
+        setRootlyMessage("All Rootly items already in your list.");
+        window.setTimeout(() => setRootlyMessage(null), 5000);
+        return;
+      }
+
+      for (const { item, task } of pairs) {
+        const est = await fetchTaskEstimate({
+          goal: task.title,
+          taskContextNote,
+          rootlyContext: item.estimateContext,
+        });
+        const estimateMin = est.ok
+          ? midpointMinutes(est)
+          : fallbackEstimateMinutes(task.title);
+        setTasks((p) =>
+          p.map((t) =>
+            t.id === task.id
+              ? { ...t, estimating: false, estimateMin }
+              : t,
+          ),
+        );
+      }
+
+      setRootlyMessage(
+        r.mock
+          ? `Imported ${pairs.length} demo Rootly tasks.`
+          : r.incidentFallback
+            ? `Imported ${pairs.length} active incidents (no Rootly Tasks yet — local check-off only).`
+            : `Imported ${pairs.length} from Rootly.`,
+      );
+      window.setTimeout(() => setRootlyMessage(null), 6000);
+    } finally {
+      setRootlyBusy(false);
+    }
+  }, [setTasks, taskContextNote]);
 
   const startSession = async () => {
     if (!isTauri()) return;
@@ -277,6 +377,11 @@ export default function QueueHomePage() {
                           aria-label={t.done ? "Undo" : "Done"}
                         />
                         <div className="min-w-0 flex-1">
+                          {t.rootly ? (
+                            <span className="mb-1 inline-block rounded-md bg-orange-500/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-orange-200/75">
+                              Rootly
+                            </span>
+                          ) : null}
                           <div className="flex items-start justify-between gap-2">
                             <p
                               className={`text-[13px] font-medium leading-snug ${
@@ -304,6 +409,21 @@ export default function QueueHomePage() {
                   ))}
                 </AnimatePresence>
               </ul>
+              {rootlyMessage ? (
+                <p className="mb-2 text-[11px] leading-snug text-white/50">
+                  {rootlyMessage}
+                </p>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => void syncRootlyInTasks()}
+                disabled={rootlyBusy}
+                className="mb-3 w-full rounded-xl border border-orange-200/18 bg-orange-500/[0.12] px-3 py-2.5 text-[12px] font-semibold text-orange-100/90 transition hover:bg-orange-500/[0.18] disabled:opacity-45"
+              >
+                {rootlyBusy
+                  ? "Importing from Rootly…"
+                  : "Import on-call work from Rootly"}
+              </button>
               <div className="flex gap-2">
                 <input
                   value={draft}

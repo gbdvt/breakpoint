@@ -1,5 +1,11 @@
 /** Shared desktop UI domain types (no mock payloads). */
 
+/** Sync target when task came from Rootly incident action items. */
+export type TaskRootlyMeta = {
+  actionItemId: string;
+  incidentId?: string;
+};
+
 export type Task = {
   id: string;
   title: string;
@@ -7,6 +13,7 @@ export type Task = {
   estimateMin?: number;
   /** Transient UI while waiting for an estimate (not required to persist). */
   estimating?: boolean;
+  rootly?: TaskRootlyMeta;
 };
 
 export type WorkSessionListItem = {

@@ -47,6 +47,15 @@ function sanitizeTask(raw: unknown): Task | null {
   };
   if (typeof o.estimateMin === "number") t.estimateMin = o.estimateMin;
   if (o.estimating === true) t.estimating = true;
+  if (o.rootly && typeof o.rootly === "object") {
+    const r = o.rootly as Record<string, unknown>;
+    if (typeof r.actionItemId === "string" && r.actionItemId.trim()) {
+      t.rootly = { actionItemId: r.actionItemId.trim() };
+      if (typeof r.incidentId === "string" && r.incidentId.trim()) {
+        t.rootly.incidentId = r.incidentId.trim();
+      }
+    }
+  }
   return t;
 }
 

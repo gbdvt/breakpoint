@@ -26,6 +26,8 @@ export async function fetchTaskEstimate(params: {
   goal: string;
   taskContextNote: string;
   plannedDurationMin?: number;
+  /** Rootly action item / incident lines for the estimator. */
+  rootlyContext?: string;
 }): Promise<TaskEstimateResult> {
   const origin = apiOrigin();
   const body: Record<string, unknown> = {
@@ -33,6 +35,8 @@ export async function fetchTaskEstimate(params: {
     mode: "work",
     taskContextNote: params.taskContextNote.trim().slice(0, 4000),
   };
+  const rc = params.rootlyContext?.trim();
+  if (rc) body.rootlyContext = rc.slice(0, 2000);
   if (
     params.plannedDurationMin != null &&
     params.plannedDurationMin > 0 &&
